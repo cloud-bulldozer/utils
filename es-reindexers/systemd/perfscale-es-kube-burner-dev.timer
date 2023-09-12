@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES kube-burner dev Timer
+Requires=perfscale-es-kube-burner-dev.service
+
+[Timer]
+OnCalendar=*-*-* 10:00:00
+Unit=perfscale-es-kube-burner-dev.service
+
+[Install]
+WantedBy=timers.target

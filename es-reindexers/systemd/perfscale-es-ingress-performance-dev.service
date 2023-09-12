@@ -1,0 +1,13 @@
+[Unit]
+Description=Perfscale ES ingress-performance dev sync job
+Wants=perfscale-es-ingress-performance-dev.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+# This driver script can be found in the jump host: snowflake.rdu2.scalelab.redhat.com. Hiding it as it has contains secrets.
+ExecStart=/bin/bash perfscale-es-ingress-performance-dev.sh
+
+[Install]
+WantedBy=multi-user.target
