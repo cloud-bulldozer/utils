@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES k8s-netperf ocp qe Timer
+Requires=perfscale-es-k8s-netperf-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Unit=perfscale-es-k8s-netperf-ocp-qe.service
+
+[Install]
+WantedBy=timers.target

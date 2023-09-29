@@ -1,0 +1,13 @@
+[Unit]
+Description=Perfscale ES ripsaw-kube-burner ocp qe sync job
+Wants=perfscale-es-ripsaw-kube-burner-ocp-qe.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+# This driver script can be found in the jump host: snowflake.rdu2.scalelab.redhat.com. Hiding it as it has contains secrets.
+ExecStart=/bin/bash perfscale-es-ripsaw-kube-burner-ocp-qe.sh
+
+[Install]
+WantedBy=multi-user.target

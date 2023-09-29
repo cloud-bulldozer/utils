@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES ingress-performance-baseline dev Timer
+Requires=perfscale-es-ingress-performance-baseline-dev.service
+
+[Timer]
+OnCalendar=*-*-* 13:00:00
+Unit=perfscale-es-ingress-performance-baseline-dev.service
+
+[Install]
+WantedBy=timers.target

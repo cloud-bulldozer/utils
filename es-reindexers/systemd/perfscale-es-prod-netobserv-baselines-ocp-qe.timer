@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES prod-netobserv-baselines ocp qe Timer
+Requires=perfscale-es-prod-netobserv-baselines-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* 17:00:00
+Unit=perfscale-es-prod-netobserv-baselines-ocp-qe.service
+
+[Install]
+WantedBy=timers.target

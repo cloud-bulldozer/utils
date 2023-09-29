@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES ripsaw-kube-burner dev Timer
+Requires=perfscale-es-ripsaw-kube-burner-dev.service
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Unit=perfscale-es-ripsaw-kube-burner-dev.service
+
+[Install]
+WantedBy=timers.target

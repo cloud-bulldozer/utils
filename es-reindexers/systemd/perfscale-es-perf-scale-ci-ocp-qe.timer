@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES perf_scale_ci ocp qe Timer
+Requires=perfscale-es-perf-scale-ci-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Unit=perfscale-es-perf-scale-ci-ocp-qe.service
+
+[Install]
+WantedBy=timers.target

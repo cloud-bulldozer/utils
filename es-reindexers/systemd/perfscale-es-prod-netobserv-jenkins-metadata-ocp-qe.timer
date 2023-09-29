@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES prod-netobserv-jenkins-metadata ocp qe Timer
+Requires=perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* 16:00:00
+Unit=perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.service
+
+[Install]
+WantedBy=timers.target

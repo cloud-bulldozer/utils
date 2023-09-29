@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES prod-netobserv-operator-metadata ocp qe Timer
+Requires=perfscale-es-prod-netobserv-operator-metadata-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* 15:00:00
+Unit=perfscale-es-prod-netobserv-operator-metadata-ocp-qe.service
+
+[Install]
+WantedBy=timers.target
