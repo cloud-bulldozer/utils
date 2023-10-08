@@ -15,6 +15,11 @@ check_destination_variables() {
 
 alias=$SOURCE_INDEX
 indices=$(curl -s -X GET $SOURCE_ES'/_alias/'$SOURCE_INDEX | jq -r 'keys[0]')
+if [ "$indices" = "error" ]; then
+  index_prefix="$SOURCE_INDEX"
+else
+  index_prefix="${indices%%-[0-9]*}"
+fi
 index_prefix=${indices%-[0-9]*}
 all_indices=$(curl -s -X GET $SOURCE_ES'/_cat/indices/'$index_prefix'*?format=json')
 sorted_indices=$(echo "$all_indices" | jq -r '.[] | .index' | sort -r)
