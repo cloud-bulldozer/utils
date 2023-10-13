@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale Jedi Notifications Timer
+Requires=perfscale-jedi-notifier.service
+
+[Timer]
+OnCalendar=Sat *-*-* 00:00:00
+Unit=perfscale-jedi-notifier.service
+
+[Install]
+WantedBy=timers.target
