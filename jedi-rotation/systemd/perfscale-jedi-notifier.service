@@ -1,0 +1,13 @@
+[Unit]
+Description=Perfscale Jedi Notifications Service
+Wants=perfscale-jedi-notifier.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/perfscale-jedi
+# This driver script can be found in the jump host: ocp-intlab-grafana.rdu2.scalelab.redhat.com. Hiding it as it has contains secrets.
+ExecStart=/bin/bash perfscale-jedi-notifier.sh
+
+[Install]
+WantedBy=multi-user.target
