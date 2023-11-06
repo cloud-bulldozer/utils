@@ -54,9 +54,10 @@ python3 /root/perfscale-jedi/perfscale-jedi-notifier.py
 ## How to check/override schedule?
 We can check the current schedule by looking at state file at path: `/root/perfscale-jedi/current_jedi_schedule.txt` in our jump host.
 ```
-['vchalla', 'msheth', '2023-10-09 12:00:00', '2023-10-16 12:00:00']
-['krvoora', 'vkommadi', '2023-10-16 12:00:00', '2023-10-23 12:00:00']
-['rsevilla', 'ancollin', '2023-10-23 12:00:00', '2023-10-30 12:00:00']
-['vzepedam', 'jtaleric', '2023-10-30 12:00:00', '2023-11-06 12:00:00']
+['vchalla', 'msheth', '2023-11-13 12:00:00', '2023-11-20 12:00:00']
+['krvoora', 'vkommadi', '2023-11-20 12:00:00', '2023-11-27 12:00:00']
+['rsevilla', 'ancollin', '2023-11-27 12:00:00', '2023-12-04 12:00:00']
+['vzepedam', 'jtaleric', '2023-12-04 12:00:00', '2023-12-18 12:00:00']
+['mukrishn', 'rzaleski', '2023-11-06 12:00:00', '2023-11-13 12:00:00']
 ```
 In order to override the schedule, one can simply update this file's content. If interested in previous schedule, we can check it in `/root/perfscale-jedi/previous_jedi_schedule.txt` file.
