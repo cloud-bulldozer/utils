@@ -78,7 +78,7 @@ def main():
     jedi = get_jedi(current_date, rotation_file)
     if jedi is None:
         pairs = generate_pairs(team_members)
-        log.info(pairs)
+        logger.info(pairs)
         save_rotation(pairs, current_date, rotation_file)
         jedi = get_jedi(current_date, rotation_file)
 
