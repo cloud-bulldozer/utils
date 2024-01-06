@@ -1,10 +1,11 @@
-import random
 import os
 import sys
 import datetime
 import logging
 import json
 import requests
+import random
+from itertools import cycle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,16 +16,17 @@ logging.basicConfig(
 logger = logging.getLogger('performance-jedi-notifier')
 
 # Function to generate pairs
-def generate_pairs(team_members):
-    random.shuffle(team_members)
+def generate_pairs(jedi_list, pandawan_list):
+    random.shuffle(jedi_list)
+    random.shuffle(pandawan_list)
 
-    pairs = []
-    for idx in range(0, len(team_members), 2):
-        if idx + 1 < len(team_members):
-            pairs.append((team_members[idx], team_members[idx+1]))
-    if (len(team_members) % 2 != 0):
-        pairs.append((team_members[len(team_members)-1], team_members[0]))
-    return pairs
+    if len(jedi_list) % 2 != 0:
+        jedi_list.append(jedi_list[0])
+    if len(pandawan_list) % 2 != 0:
+        pandawan_list.append(pandawan_list[0])
+    shorter, longer = (pandawan_list, jedi_list) if len(pandawan_list) < len(jedi_list) else (jedi_list, pandawan_list)
+    paired_list = list(zip(longer, cycle(shorter)))
+    return paired_list
 
 # Function to get current jedi
 def get_jedi(current_date, rotation_file):
@@ -40,7 +42,7 @@ def get_jedi(current_date, rotation_file):
         data = eval(line.strip())
         start_date = datetime.datetime.strptime(data[2], "%Y-%m-%d %H:%M:%S")
         end_date = datetime.datetime.strptime(data[3], "%Y-%m-%d %H:%M:%S")
-        
+
         if start_date <= current_date < end_date:
             logger.info(f"Current date: {current_date} falls under range {start_date} - {end_date}")
             return data
@@ -59,16 +61,21 @@ def save_rotation(pairs, current_date, rotation_file):
 
 # Main function to generate and save the rotation for the week
 def main():
-    team_members = os.getenv("TEAM_MEMBERS")
-    if not team_members:
-        sys.exit("Environment variable TEAM_MEMBERS is not set")
-    team_members = team_members.split(",")
+    jedi_list = os.getenv("JEDI_LIST")
+    if not jedi_list:
+        sys.exit("Environment variable JEDI_LIST is not set")
+    jedi_list = jedi_list.split(",")
+
+    pandawan_list = os.getenv("PANDAWAN_LIST")
+    if not pandawan_list:
+        sys.exit("Environment variable PANDAWAN_LIST is not set")
+    pandawan_list = pandawan_list.split(",")
 
     rotation_file = os.getenv("ROTATION_FILE", "current_jedi_schedule.txt")
     hostname = os.getenv("HOSTNAME")
 
     current_date = os.getenv("CURRENT_DATE")
-    if not team_members:
+    if not current_date:
         sys.exit("Environment variable CURRENT_DATE is not set")
 
     webhook_url = os.getenv("WEBHOOK_URL")
@@ -77,7 +84,7 @@ def main():
 
     jedi = get_jedi(current_date, rotation_file)
     if jedi is None:
-        pairs = generate_pairs(team_members)
+        pairs = generate_pairs(jedi_list, pandawan_list)
         logger.info(pairs)
         save_rotation(pairs, current_date, rotation_file)
         jedi = get_jedi(current_date, rotation_file)
@@ -85,7 +92,8 @@ def main():
     logger.info(f"Jedi Info: {jedi}")
     message = (
         f"*Jedi Week:* {jedi[2]} - {jedi[3]}\n"
-        f"*Jedi:* <@{jedi[0]}>, <@{jedi[1]}>\n"
+        f"*Jedi:* <@{jedi[0]}>\n"
+        f"*Pandawan:* <@{jedi[1]}>\n"
         f"Check */root/perfscale-jedi/current_jedi_schedule.txt* in the *host:{hostname}* for the entire rotation schedule"
     )
     payload = {
