@@ -93,7 +93,7 @@ def main():
     message = (
         f"*Jedi Week:* {jedi[2]} - {jedi[3]}\n"
         f"*Jedi:* <@{jedi[0]}>\n"
-        f"*Pandawan:* <@{jedi[1]}>\n"
+        f"*Padawan:* <@{jedi[1]}>\n"
         f"Check */root/perfscale-jedi/current_jedi_schedule.txt* in the *host:{hostname}* for the entire rotation schedule"
     )
     payload = {
