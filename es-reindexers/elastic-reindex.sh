@@ -122,7 +122,7 @@ else
   '
   initial_destination_count=$(curl -s -X GET $DESTINATION_ES/$DESTINATION_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
   source_count=0
-  for index in "${sorted_indices_array[@]:0:2}"; do
+  for index in "${sorted_indices_array[@]:0:5}"; do
       SOURCE_INDEX=$index;
       S3_PATH=$directory_name/$SOURCE_INDEX;
       source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
