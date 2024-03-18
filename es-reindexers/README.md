@@ -148,7 +148,7 @@ systemctl status perfscale-es-estestindex.service
 
 ## **Important Points To Note**
 * While creating indices, always try to have unique aliases assigned to them to avoid collisions during querying.
-* Never create an index with a name that is a substring of another index. This will create issues while applying index-patterns to those set of indices which are required for rollover activities.
+* Never create an index with a name that is a substring and prefix of another index. This will create issues while applying index-patterns to those set of indices which are required for rollover activities.
   * Example for INVALID case: `ingress-performance` and `ingress-performance-baseline`
   * Example for VALID case: `ingress-performance` and `baseline-ingress-performance`
 
