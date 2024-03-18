@@ -146,6 +146,12 @@ journalctl -u perfscale-es-estestindex
 systemctl status perfscale-es-estestindex.service
 ```
 
+## **Important Points To Note**
+* While creating indices, always try to have unique aliases assigned to them to avoid collisions during querying.
+* Never create an index with a name that is a substring of another index. This will create issues while applying index-patterns to those set of indices which are required for rollover activities.
+  * Example for INVALID case: `ingress-performance` and `ingress-performance-baseline`
+  * Example for VALID case: `ingress-performance` and `baseline-ingress-performance`
+
 ## Current list of configured jobs in jump host
 ### Perfscale ES Dev Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
@@ -155,7 +161,6 @@ systemctl status perfscale-es-estestindex.service
 | perfscale-es-kube-burner-ocp-dev.timer | perfscale-es-kube-burner-ocp-dev.service | perfscale-es-kube-burner-ocp-dev.sh | kube-burner-ocp | ospst-ripsaw-kube-burner | \*-\*-\* 11:00:00 |
 | perfscale-es-ingress-performance-dev.timer | perfscale-es-ingress-performance-dev.service | perfscale-es-ingress-performance-dev.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* 12:00:00 |
 | perfscale-es-k8s-netperf-dev.timer | perfscale-es-k8s-netperf-dev.service | perfscale-es-k8s-netperf-dev.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* 22:00:00 |
-| perfscale-es-ingress-performance-baseline-dev.timer | perfscale-es-ingress-performance-baseline-dev.service | perfscale-es-ingress-performance-baseline-dev.sh | ingress-performance-baseline | ospst-ingress-performance-baseline | \*-\*-\* 13:00:00 |
 
 ### Perfscale ES Prod Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
@@ -163,7 +168,6 @@ systemctl status perfscale-es-estestindex.service
 | perfscale-es-ripsaw-kube-burner-prod.timer | perfscale-es-ripsaw-kube-burner-prod.service | perfscale-es-ripsaw-kube-burner-prod.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* 08:00:00 |
 | perfscale-es-ingress-performance-prod.timer | perfscale-es-ingress-performance-prod.service | perfscale-es-ingress-performance-prod.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* 13:00:00 |
 | perfscale-es-k8s-netperf-prod.timer | perfscale-es-k8s-netperf-prod.service | perfscale-es-k8s-netperf-prod.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* 19:00:00 |
-| perfscale-es-ingress-performance-baseline-prod.timer | perfscale-es-ingress-performance-baseline-prod.service | perfscale-es-ingress-performance-baseline-prod.sh | ingress-performance-baseline | ospst-ingress-performance-baseline | \*-\*-\* 20:00:00 |
 
 ### Perfscale ES OCP QE Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
