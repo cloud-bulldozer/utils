@@ -43,8 +43,7 @@ WantedBy=multi-user.target
 ```
 This service unit triggers a script exposing the ENVs below used by the script to create/notify rotations.
 ```
-export JEDI_LIST="ancollin,vzepedam,krvoora,vkommadi,rsevilla,msheth,jtaleric"
-export PANDAWAN_LIST="vchalla,jose,svesta,prubenda"
+export TEAM_MEMBERS="ancollin,vzepedam,krvoora,vkommadi,rsevilla,msheth,jtaleric,rzaleski,mukrishn,dsanzmor,vchalla,jlema,svetsa,prubenda,sboyapal,smanda,sahshah,qili,liqcui,lhorsley,skordas,sninganu"
 export ROTATION_FILE="current_jedi_schedule.txt"
 export CURRENT_DATE=$(date -d '2 days' "+%Y-%m-%d 12:00:00")
 export WEBHOOK_URL="URL"
@@ -53,15 +52,19 @@ python3 /root/perfscale-jedi/perfscale-jedi-notifier.py
 ```
 
 ## How to check/override schedule?
-We can check the current schedule by looking at state file at path: `/root/perfscale-jedi/current_jedi_schedule.txt` in our jump host.
+We can check the current schedule by looking at state file at path: `/root/perfscale-jedi/current_jedi_schedule.txt` in our jump host. For example
 ```
-['vzepedam', 'vchalla', '2024-01-01 12:00:00', '2024-01-08 12:00:00']
-['ancollin', 'svesta', '2024-01-08 12:00:00', '2024-01-15 12:00:00']
-['rsevilla', 'jose', '2024-01-15 12:00:00', '2024-01-22 12:00:00']
-['krvoora', 'prubenda', '2024-01-22 12:00:00', '2024-01-29 12:00:00']
-['msheth', 'vchalla', '2024-01-29 12:00:00', '2024-02-05 12:00:00']
-['jtaleric', 'svesta', '2024-02-05 12:00:00', '2024-02-12 12:00:00']
-['vkommadi', 'jose', '2024-02-12 12:00:00', '2024-02-19 12:00:00']
-['vzepedam', 'prubenda', '2024-02-19 12:00:00', '2024-02-26 12:00:00']
+[root@ocp-intlab-grafana perfscale-jedi]# cat current_jedi_schedule.txt 
+['ancollin', 'liqcui', '2024-04-05 12:00:00', '2024-04-12 12:00:00']
+['vzepedam', 'krvoora', '2024-04-12 12:00:00', '2024-04-19 12:00:00']
+['mukrishn', 'sboyapal', '2024-04-19 12:00:00', '2024-04-26 12:00:00']
+['lhorsley', 'rsevilla', '2024-04-26 12:00:00', '2024-05-03 12:00:00']
+['vkommadi', 'msheth', '2024-05-03 12:00:00', '2024-05-10 12:00:00']
+['rzaleski', 'jlema', '2024-05-10 12:00:00', '2024-05-17 12:00:00']
+['prubenda', 'dsanzmor', '2024-05-17 12:00:00', '2024-05-24 12:00:00']
+['sninganu', 'sahshah', '2024-05-24 12:00:00', '2024-05-31 12:00:00']
+['svetsa', 'vchalla', '2024-05-31 12:00:00', '2024-06-07 12:00:00']
+['skordas', 'smanda', '2024-06-07 12:00:00', '2024-06-14 12:00:00']
+['qili', 'jtaleric', '2024-06-14 12:00:00', '2024-06-21 12:00:00']
 ```
 In order to override the schedule, one can simply update this file's content. If interested in previous schedule, we can check it in `/root/perfscale-jedi/previous_jedi_schedule.txt` file.
