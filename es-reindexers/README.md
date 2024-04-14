@@ -1,5 +1,5 @@
 # ES Reindexing
-Script to trigger es reindexing.
+Scripts to trigger es reindexing.
 
 ## **Prerequisites**
 * Curl utility.
@@ -117,6 +117,10 @@ echo "Please tail for logs at $LOG_FILE";
 /bin/bash /root/elastic-reindex.sh >> $LOG_FILE 2>&1;
 exit_status=$?;
 log_file_preview="$(tail -n 10 "$LOG_FILE")";
+if [ "$exit_status" -eq 2 ]; then
+  echo "No delta in the destination index, skipping the slack notification"
+  exit 0
+fi
 if [ -z "$log_file_preview" ] || [ $exit_status -ne 0 ]; then
     message=":alert-siren: ES Reindexing Job *JOBNAME* ended with *failure*. Please review full logs on host:$(hostname) path:*$LOG_FILE* for more details :failed:";
 else
@@ -156,27 +160,31 @@ systemctl status perfscale-es-estestindex.service
 ### Perfscale ES Dev Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
 | ------------------------------ | ---------------------- | ------------------ | -------------------------- | -------------------------- | -------------------------- |
-| perfscale-es-ripsaw-kube-burner-dev.timer | perfscale-es-ripsaw-kube-burner-dev.service | perfscale-es-ripsaw-kube-burner-dev.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* 06:00:00 |
-| perfscale-es-kube-burner-dev.timer | perfscale-es-kube-burner-dev.service | perfscale-es-kube-burner-dev.sh | kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* 10:00:00 |
-| perfscale-es-kube-burner-ocp-dev.timer | perfscale-es-kube-burner-ocp-dev.service | perfscale-es-kube-burner-ocp-dev.sh | kube-burner-ocp | ospst-ripsaw-kube-burner | \*-\*-\* 11:00:00 |
-| perfscale-es-ingress-performance-dev.timer | perfscale-es-ingress-performance-dev.service | perfscale-es-ingress-performance-dev.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* 12:00:00 |
-| perfscale-es-k8s-netperf-dev.timer | perfscale-es-k8s-netperf-dev.service | perfscale-es-k8s-netperf-dev.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* 22:00:00 |
+| perfscale-es-ripsaw-kube-burner-dev.timer | perfscale-es-ripsaw-kube-burner-dev.service | perfscale-es-ripsaw-kube-burner-dev.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* \*:\*:00 |
+| perfscale-es-kube-burner-dev.timer | perfscale-es-kube-burner-dev.service | perfscale-es-kube-burner-dev.sh | kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* *:0/8:00 |
+| perfscale-es-kube-burner-ocp-dev.timer | perfscale-es-kube-burner-ocp-dev.service | perfscale-es-kube-burner-ocp-dev.sh | kube-burner-ocp | ospst-ripsaw-kube-burner | \*-\*-\* *:0/9:00 |
+| perfscale-es-ingress-performance-dev.timer | perfscale-es-ingress-performance-dev.service | perfscale-es-ingress-performance-dev.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* *:0/2:00 |
+| perfscale-es-k8s-netperf-dev.timer | perfscale-es-k8s-netperf-dev.service | perfscale-es-k8s-netperf-dev.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* \*:\*:00 |
 
 ### Perfscale ES Prod Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
 | ------------------------------ | ---------------------- | ------------------ | -------------------------- | -------------------------- | -------------------------- |
-| perfscale-es-ripsaw-kube-burner-prod.timer | perfscale-es-ripsaw-kube-burner-prod.service | perfscale-es-ripsaw-kube-burner-prod.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* 08:00:00 |
-| perfscale-es-ingress-performance-prod.timer | perfscale-es-ingress-performance-prod.service | perfscale-es-ingress-performance-prod.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* 13:00:00 |
-| perfscale-es-k8s-netperf-prod.timer | perfscale-es-k8s-netperf-prod.service | perfscale-es-k8s-netperf-prod.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* 19:00:00 |
+| perfscale-es-ripsaw-kube-burner-prod.timer | perfscale-es-ripsaw-kube-burner-prod.service | perfscale-es-ripsaw-kube-burner-prod.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* *:0/5:00 |
+| perfscale-es-ingress-performance-prod.timer | perfscale-es-ingress-performance-prod.service | perfscale-es-ingress-performance-prod.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* *:0/4:00 |
+| perfscale-es-k8s-netperf-prod.timer | perfscale-es-k8s-netperf-prod.service | perfscale-es-k8s-netperf-prod.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* *:0/1:00 |
 
 ### Perfscale ES OCP QE Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
 | ------------------------------ | ---------------------- | ------------------ | -------------------------- | -------------------------- | -------------------------- |
-| perfscale-es-ripsaw-kube-burner-ocp-qe.timer | perfscale-es-ripsaw-kube-burner-ocp-qe.service | perfscale-es-ripsaw-kube-burner-ocp-qe.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* 00:00:00 |
-| perfscale-es-ingress-performance-ocp-qe.timer | perfscale-es-ingress-performance-ocp-qe.service | perfscale-es-ingress-performance-ocp-qe.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* 18:00:00 |
-| perfscale-es-k8s-netperf-ocp-qe.timer | perfscale-es-k8s-netperf-ocp-qe.service | perfscale-es-k8s-netperf-ocp-qe.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* 02:00:00 |
-| perfscale-es-perf-scale-ci-ocp-qe.timer | perfscale-es-perf-scale-ci-ocp-qe.service | perfscale-es-perf-scale-ci-ocp-qe.sh | perf_scale_ci | ospst-perf-scale-ci | \*-\*-\* 04:00:00 |
-| perfscale-es-prod-netobserv-datapoints-ocp-qe.timer | perfscale-es-prod-netobserv-datapoints-ocp-qe.service | perfscale-es-prod-netobserv-datapoints-ocp-qe.sh | prod-netobserv-datapoints | ospst-prod-netobserv-datapoints | \*-\*-\* 14:00:00 |
-| perfscale-es-prod-netobserv-operator-metadata-ocp-qe.timer | perfscale-es-prod-netobserv-operator-metadata-ocp-qe.service | perfscale-es-prod-netobserv-operator-metadata-ocp-qe.sh | prod-netobserv-operator-metadata | ospst-prod-netobserv-operator-metadata | \*-\*-\* 15:00:00 |
-| perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.timer | perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.service | perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.sh | prod-netobserv-jenkins-metadata | ospst-prod-netobserv-jenkins-metadata | \*-\*-\* 16:00:00 |
-| perfscale-es-prod-netobserv-baselines-ocp-qe.timer | perfscale-es-prod-netobserv-baselines-ocp-qe.service | perfscale-es-prod-netobserv-baselines-ocp-qe.sh | prod-netobserv-baselines | prod-netobserv-baselines | \*-\*-\* 17:00:00 |
+| perfscale-es-ripsaw-kube-burner-ocp-qe.timer | perfscale-es-ripsaw-kube-burner-ocp-qe.service | perfscale-es-ripsaw-kube-burner-ocp-qe.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* *:0/10:00 |
+| perfscale-es-ingress-performance-ocp-qe.timer | perfscale-es-ingress-performance-ocp-qe.service | perfscale-es-ingress-performance-ocp-qe.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* *:0/6:00 |
+| perfscale-es-k8s-netperf-ocp-qe.timer | perfscale-es-k8s-netperf-ocp-qe.service | perfscale-es-k8s-netperf-ocp-qe.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* *:0/3:00 |
+| perfscale-es-perf-scale-ci-ocp-qe.timer | perfscale-es-perf-scale-ci-ocp-qe.service | perfscale-es-perf-scale-ci-ocp-qe.sh | perf_scale_ci | ospst-perf-scale-ci | \*-\*-\* *:0/7:00 |
+| perfscale-es-prod-netobserv-datapoints-ocp-qe.timer | perfscale-es-prod-netobserv-datapoints-ocp-qe.service | perfscale-es-prod-netobserv-datapoints-ocp-qe.sh | prod-netobserv-datapoints | ospst-prod-netobserv-datapoints | \*-\*-\* \*:\*:00 |
+| perfscale-es-prod-netobserv-operator-metadata-ocp-qe.timer | perfscale-es-prod-netobserv-operator-metadata-ocp-qe.service | perfscale-es-prod-netobserv-operator-metadata-ocp-qe.sh | prod-netobserv-operator-metadata | ospst-prod-netobserv-operator-metadata | \*-\*-\* \*:\*:00 |
+| perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.timer | perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.service | perfscale-es-prod-netobserv-jenkins-metadata-ocp-qe.sh | prod-netobserv-jenkins-metadata | ospst-prod-netobserv-jenkins-metadata | \*-\*-\* \*:\*:00 |
+| perfscale-es-prod-netobserv-baselines-ocp-qe.timer | perfscale-es-prod-netobserv-baselines-ocp-qe.service | perfscale-es-prod-netobserv-baselines-ocp-qe.sh | prod-netobserv-baselines | prod-netobserv-baselines | \*-\*-\* \*:\*:00 |
+
+### Crontab Visualization
+
+![alt text](crontab_schedule.png)

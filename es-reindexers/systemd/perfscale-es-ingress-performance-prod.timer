@@ -3,7 +3,7 @@ Description=Perfscale ES ingress-performance prod Timer
 Requires=perfscale-es-ingress-performance-prod.service
 
 [Timer]
-OnCalendar=*-*-* 13:00:00
+OnCalendar=*-*-* *:0/4:00
 Unit=perfscale-es-ingress-performance-prod.service
 
 [Install]

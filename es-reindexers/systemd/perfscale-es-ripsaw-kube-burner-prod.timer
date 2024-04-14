@@ -3,7 +3,7 @@ Description=Perfscale ES ripsaw-kube-burner prod Timer
 Requires=perfscale-es-ripsaw-kube-burner-prod.service
 
 [Timer]
-OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 00:0/5:00
 Unit=perfscale-es-ripsaw-kube-burner-prod.service
 
 [Install]

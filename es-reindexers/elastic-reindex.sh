@@ -127,6 +127,10 @@ else
       S3_PATH=$directory_name/$SOURCE_INDEX;
       source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
       source_count=$((source_count + source_data_count))
+      if [ "$source_data_count" -eq 0 ]; then
+        echo "No data found in index $SOURCE_ES/$SOURCE_INDEX within given time range"
+        continue
+      fi
       if [ "$REINDEX_ONLY" = "true" ]; then
         check_destination_variables
         echo "Performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
@@ -268,6 +272,12 @@ echo "Total Time Taken: $total_time"
 echo "Data Migration Between Dates: $START_TIME and $END_TIME"
 if [ "$BACKFILL" = "true" ]; then
   echo "Backfill Job Completed"
+  exit 0
 else
   echo "Stats - Source Count: $source_count, Initial Destination Count: $initial_destination_count, Current Destination Count: $current_destination_count, Destination Delta: $destination_count"
+fi
+
+if [ "$source_count" -eq 0 ] || [ "$destination_count" -eq 0 ]; then
+  echo "No delta in the destination, skipping the slack notification"
+  exit 2
 fi
