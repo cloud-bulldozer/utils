@@ -3,7 +3,7 @@ Description=Perfscale ES k8s-netperf prod Timer
 Requires=perfscale-es-k8s-netperf-prod.service
 
 [Timer]
-OnCalendar=*-*-* 19:00:00
+OnCalendar=*-*-* *:0/1:00
 Unit=perfscale-es-k8s-netperf-prod.service
 
 [Install]

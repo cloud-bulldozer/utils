@@ -3,7 +3,7 @@ Description=Perfscale ES ripsaw-kube-burner ocp qe Timer
 Requires=perfscale-es-ripsaw-kube-burner-ocp-qe.service
 
 [Timer]
-OnCalendar=*-*-* 00:00:00
+OnCalendar=*-*-* *:0/10:00
 Unit=perfscale-es-ripsaw-kube-burner-ocp-qe.service
 
 [Install]

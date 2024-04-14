@@ -3,7 +3,7 @@ Description=Perfscale ES kube-burner-ocp dev Timer
 Requires=perfscale-es-kube-burner-ocp-dev.service
 
 [Timer]
-OnCalendar=*-*-* 11:00:00
+OnCalendar=*-*-* *:0/9:00
 Unit=perfscale-es-kube-burner-ocp-dev.service
 
 [Install]

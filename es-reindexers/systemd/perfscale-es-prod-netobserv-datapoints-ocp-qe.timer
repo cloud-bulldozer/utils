@@ -3,7 +3,7 @@ Description=Perfscale ES prod-netobserv-datapoints ocp qe Timer
 Requires=perfscale-es-prod-netobserv-datapoints-ocp-qe.service
 
 [Timer]
-OnCalendar=*-*-* 14:00:00
+OnCalendar=*-*-* *:*:00
 Unit=perfscale-es-prod-netobserv-datapoints-ocp-qe.service
 
 [Install]
