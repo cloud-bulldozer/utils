@@ -113,6 +113,7 @@ export DESTINATION_ES=ES_URL;
 export DESTINATION_INDEX=ES_INDEX;
 export LOG_FILE="/var/log/perfscale-es-estestindex-$(date +'%Y%m%d%H%M%S').log";
 export WEBHOOK_URL=SLACK_WEBHOOK_URL;
+export TOUCH_FILE=TOUCH_FILE.txt;
 echo "Please tail for logs at $LOG_FILE";
 /bin/bash /root/elastic-reindex.sh >> $LOG_FILE 2>&1;
 exit_status=$?;

@@ -6,6 +6,11 @@ if [ -z "$SOURCE_ES" ] || [ -z "$SOURCE_INDEX" ]; then
   exit 1
 fi
 
+if [ -z "$TOUCH_FILE" ]; then
+  echo "TOUCH_FILE is not defined. Please specify a value"
+  exit 1
+fi
+
 check_destination_variables() {
     if [ -z "$DESTINATION_ES" ] || [ -z "$DESTINATION_INDEX" ]; then
         echo "Please set the environment variables DESTINATION_ES and DESTINATION_INDEX"
@@ -39,7 +44,19 @@ TIMESTAMP_FIELD=${TIMESTAMP_FIELD:-"timestamp"}
 # Create a directory name based on START_TIME and END_TIME
 START_TIME=${START_TIME:-$(date -d '2 days ago' +'%Y-%m-%dT%H:%M:%S')};
 END_TIME=${END_TIME:-$(date +'%Y-%m-%dT%H:%M:%S')};
+current_start_time=$(date -d "$START_TIME" +%s);
+current_end_time=$(date -d "$END_TIME" +%s);
 directory_name="$(date -d "$START_TIME" +%s)-$(date -d "$END_TIME" +%s)";
+
+# Check if the touch file exists
+if [ -f "$TOUCH_FILE" ]; then
+  previous_end_time=$(cat "$TOUCH_FILE")
+  min_timestamp=$((current_start_time < previous_end_time ? current_start_time : previous_end_time))
+else
+  min_timestamp=$current_start_time
+fi
+
+START_TIME=$(date -u -d "@$min_timestamp" +'%Y-%m-%dT%H:%M:%S')
 
 # publishes a given list of S3 backup files to destination ES
 publish_to_destination(){
@@ -272,10 +289,10 @@ echo "Total Time Taken: $total_time"
 echo "Data Migration Between Dates: $START_TIME and $END_TIME"
 if [ "$BACKFILL" = "true" ]; then
   echo "Backfill Job Completed"
-  exit 0
 else
   echo "Stats - Source Count: $source_count, Initial Destination Count: $initial_destination_count, Current Destination Count: $current_destination_count, Destination Delta: $destination_count"
 fi
+echo "$current_end_time" > "$TOUCH_FILE"
 
 if [ "$source_count" -eq 0 ] || [ "$destination_count" -eq 0 ]; then
   echo "No delta in the destination, skipping the slack notification"
