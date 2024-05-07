@@ -148,7 +148,11 @@ else
       SOURCE_INDEX=$index;
       S3_PATH=$directory_name/$SOURCE_INDEX;
       source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
-      if [ -z "$source_data_count" ] && [ "$source_data_count" -eq 0 ]; then
+      if [ -z "$source_data_count" ] || [ "$source_data_count" = "null" ]; then
+        echo "index not found $SOURCE_ES/$SOURCE_INDEX"
+        continue
+      fi
+      if [ "$source_data_count" -eq 0 ]; then
         echo "No data found in index $SOURCE_ES/$SOURCE_INDEX within given time range"
         continue
       fi
@@ -265,7 +269,7 @@ else
     echo "Initial Destination Count: $initial_destination_count"
     echo "Current Destination Count: $current_destination_count"
     echo "Destination Count Delta: $destination_count"
-    exit 1
+    exit 3
   fi
 fi
 
