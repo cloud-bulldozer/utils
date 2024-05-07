@@ -40,6 +40,7 @@ BACKFILL=${BACKFILL:-false}
 BACKFILL_INDEX=${BACKFILL_INDEX:-$SOURCE_INDEX}
 BACKFILL_DRY_RUN=${BACKFILL_DRY_RUN:-false}
 TIMESTAMP_FIELD=${TIMESTAMP_FIELD:-"timestamp"}
+send_notification="false"
 
 # Create a directory name based on START_TIME and END_TIME
 START_TIME=${START_TIME:-$(date -d '2 days ago' +'%Y-%m-%dT%H:%M:%S')};
@@ -52,6 +53,10 @@ directory_name="$(date -d "$START_TIME" +%s)-$(date -d "$END_TIME" +%s)";
 if [ -f "$TOUCH_FILE" ]; then
   previous_end_time=$(cat "$TOUCH_FILE")
   min_timestamp=$((current_start_time < previous_end_time ? current_start_time : previous_end_time))
+  current_day_zero_hour=$(date -d "$(date -d "@$current_end_time" +'%Y-%m-%d') 00:00:00" +%s)
+  if [ $current_day_zero_hour -ge $previous_end_time ] && [ $current_day_zero_hour -le $current_end_time ]; then
+    send_notification="true"
+  fi
 else
   min_timestamp=$current_start_time
 fi
@@ -143,11 +148,11 @@ else
       SOURCE_INDEX=$index;
       S3_PATH=$directory_name/$SOURCE_INDEX;
       source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
-      source_count=$((source_count + source_data_count))
-      if [ "$source_data_count" -eq 0 ]; then
+      if [ -z "$source_data_count" ] && [ "$source_data_count" -eq 0 ]; then
         echo "No data found in index $SOURCE_ES/$SOURCE_INDEX within given time range"
         continue
       fi
+      source_count=$((source_count + source_data_count))
       if [ "$REINDEX_ONLY" = "true" ]; then
         check_destination_variables
         echo "Performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
@@ -294,7 +299,9 @@ else
 fi
 echo "$current_end_time" > "$TOUCH_FILE"
 
-if [ "$source_count" -eq 0 ] || [ "$destination_count" -eq 0 ]; then
-  echo "No delta in the destination, skipping the slack notification"
-  exit 2
+if [ "$send_notification" = "true" ]; then
+  exit 0
+else
+  echo "Not last run of the day, skipping the slack notification"
+  exit 3
 fi

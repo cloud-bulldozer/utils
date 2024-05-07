@@ -64,7 +64,7 @@ To setup a cron job we need to have the below tools as prerequisites.
 * logrotate (Optional: For log rotation)
 
 ### **Steps**
-> **NOTE**: It is recommended to have separate set of systemd service, timer and a driver script for each index, which acts as a daily sync job.
+> **NOTE**: It is recommended to have separate set of systemd service, timer and a driver script for each index, which acts as a periodic sync job.
 
 For example if we have a test index (i.e `estestindex`) for which we want a periodic sync to happen, below are steps.
 ### Setup a systemd timer
@@ -112,20 +112,23 @@ export SOURCE_INDEX=ES_INDEX;
 export DESTINATION_ES=ES_URL;
 export DESTINATION_INDEX=ES_INDEX;
 export LOG_FILE="/var/log/perfscale-es-estestindex-$(date +'%Y%m%d%H%M%S').log";
+export LOG_FILE_PREFIX="/var/log/perfscale-es-estestindex-$(date +'%Y%m%d')";
 export WEBHOOK_URL=SLACK_WEBHOOK_URL;
 export TOUCH_FILE=TOUCH_FILE.txt;
 echo "Please tail for logs at $LOG_FILE";
 /bin/bash /root/elastic-reindex.sh >> $LOG_FILE 2>&1;
 exit_status=$?;
 log_file_preview="$(tail -n 10 "$LOG_FILE")";
-if [ "$exit_status" -eq 2 ]; then
-  echo "No delta in the destination index, skipping the slack notification"
+
+if [ "$exit_status" -eq 3 ]; then
+  echo "Obvious success case, skipping the slack notification"
   exit 0
 fi
+
 if [ -z "$log_file_preview" ] || [ $exit_status -ne 0 ]; then
     message=":alert-siren: ES Reindexing Job *JOBNAME* ended with *failure*. Please review full logs on host:$(hostname) path:*$LOG_FILE* for more details :failed:";
 else
-    message=":success: ES Reindexing Job *JOBNAME* ended with *success*. Please take a look at below summary :white_check_mark:";
+    message=":success: ES Reindexing Job *JOBNAME* ended with *success*. Please take a look at logs prefixed with *$LOG_FILE_PREFIX* on host:$(hostname) for more details :white_check_mark:";
     message="$message \n\`\`\`\n$log_file_preview\n\`\`\`";
 fi
 curl -X POST -H 'Content-type: application/x-www-form-urlencoded' --data-urlencode "payload={\"text\": \"$message\"}" $WEBHOOK_URL;
