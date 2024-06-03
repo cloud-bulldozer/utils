@@ -1,0 +1,23 @@
+[Unit]
+Description=Perfscale ES rosa-metadata prod sync job
+Wants=perfscale-es-rosa-metadata-prod.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/bin/bash perfscale-es-rosa-metadata-prod.sh
+
+[Install]
+WantedBy=multi-user.target
+[root@snowflake system]# cat perfscale-es-rosa-metadata-prod.timer
+[Unit]
+Description=Perfscale ES perf scale rosa metadata Timer
+Requires=perfscale-es-rosa-metadata-prod.service
+
+[Timer]
+OnCalendar=*-*-* *:1/12:00
+Unit=perfscale-es-rosa-metadata-prod.service
+
+[Install]
+WantedBy=timers.target
