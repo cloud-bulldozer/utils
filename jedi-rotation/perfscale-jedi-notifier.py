@@ -26,7 +26,6 @@ def generate_pairs(team_members):
         return None
 
     last_two_week_members = [eval(lines[len(lines)-1])[0], eval(lines[len(lines)-1])[1], eval(lines[len(lines)-2])[0], eval(lines[len(lines)-2])[1]]
-    print(last_two_week_members)
     result_list = list(filter(lambda x: x not in last_two_week_members, team_members))
     mid_index = len(result_list)//2
     result_list.insert(mid_index, last_two_week_members[3])
@@ -39,7 +38,7 @@ def generate_pairs(team_members):
         if idx + 1 < len(result_list):
             pairs.append((result_list[idx], result_list[idx+1]))
     if (len(result_list) % 2 != 0):
-        pairs.append((result_list[len(result_list)-1], result_list[0]))
+        pairs.append((result_list[len(result_list)-1], result_list[mid_index]))
     return pairs
 
 # Function to get current jedi
@@ -50,28 +49,113 @@ def get_jedi(current_date, rotation_file):
         with open(full_path, "r") as file:
             lines = file.readlines()
     except FileNotFoundError:
-        return None
+        return None, None
 
-    for line in lines:
+    index = None
+    pairs = []
+    for idx, line in enumerate(lines):
         data = eval(line.strip())
         start_date = datetime.datetime.strptime(data[2], "%Y-%m-%d %H:%M:%S")
         end_date = datetime.datetime.strptime(data[3], "%Y-%m-%d %H:%M:%S")
+        pairs.append([data[0], data[1], data[2], data[3]])
         
         if start_date <= current_date < end_date:
             logger.info(f"Current date: {current_date} falls under range {start_date} - {end_date}")
-            return data
-    os.rename(full_path, os.path.join(os.getcwd(), f"previous_jedi_schedule.txt"))
-    return None
+            index = idx
+    if index is not None:
+        return pairs, index
+    else:
+        os.rename(full_path, os.path.join(os.getcwd(), f"previous_jedi_schedule.txt"))
+        return None, None
 
 # Function to save rotation
 def save_rotation(pairs, current_date, rotation_file):
     full_path = os.path.join(os.getcwd(), rotation_file)
-    with open(full_path, "a") as file:
+    with open(full_path, "w") as file:
         for pair in pairs:
             end_date = (datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S") + datetime.timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M:%S")
             data = [pair[0], pair[1], current_date, end_date]
             current_date = end_date
             file.write(str(data) + "\n")
+
+# Function to save rotation and generate stylish, responsive HTML table
+def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair):
+    full_path = os.path.join(os.getcwd(), rotation_file)
+    with open(full_path, "w") as file:
+        file.write("""
+        <html>
+        <head>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    background-color: #f9f9f9;
+                }
+                h2 {
+                    text-align: center;
+                    color: #333333;
+                    margin: 0;
+                    font-size: 28px;
+                    border: 2px solid #333333;
+                    padding: 10px 0px;
+                    background-color: #f9f9f9;
+                }
+                table {
+                    width: 100%;
+                    font-family: Arial, sans-serif;
+                    border-collapse: collapse;
+                }
+                th, td {
+                    border: 1px solid #dddddd;
+                    text-align: left;
+                    padding: 12px 15px;
+                }
+                tr:nth-child(even) {
+                    background-color: #f2f2f2;
+                }
+                th {
+                    background-color: #04AA6D;
+                    color: white;
+                }
+                tr:hover {
+                    background-color: #f1f1f1; /* Hover effect for table rows */
+                }
+                .highlight {
+                    border: 3px solid #FFCD00; /* Highlight border for current Jedi */
+                    font-weight: bold;
+                }
+            </style>
+        </head>
+        <body>
+            <h2>PerfScale Jedi Rotation Schedule</h2>
+            <table>
+                <tr>
+                    <th>Jedi 1</th>
+                    <th>Jedi 2</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                </tr>
+        """)  # Start of the HTML file and table
+
+        for pair in pairs:
+            end_date = (datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S") + datetime.timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Conditional check for highlighting the current Jedi pair with a border
+            if pair == current_jedi_pair:
+                data_row = f"<tr class='highlight'><td>{pair[0]}</td><td>{pair[1]}</td><td>{current_date}</td><td>{end_date}</td></tr>"
+            else:
+                data_row = f"<tr><td>{pair[0]}</td><td>{pair[1]}</td><td>{current_date}</td><td>{end_date}</td></tr>"
+            
+            current_date = end_date
+            file.write(data_row + "\n")  # Write each row of data to the HTML table
+
+        # Close the table and HTML structure
+        file.write("""
+            </table>
+        </body>
+        </html>
+        """)
 
 # Main function to generate and save the rotation for the week
 def main():
@@ -81,6 +165,7 @@ def main():
     team_members = team_members.split(",")
 
     rotation_file = os.getenv("ROTATION_FILE", "current_jedi_schedule.txt")
+    rotation_html_file = os.getenv("ROTATION_HTML_FILE", "/usr/share/nginx/html/perfscale_jedi/index.html")
     hostname = os.getenv("HOSTNAME")
 
     current_date = os.getenv("CURRENT_DATE")
@@ -91,18 +176,25 @@ def main():
     if not webhook_url:
         sys.exit("Environment variable WEBHOOK_URL is not set")
 
-    jedi = get_jedi(current_date, rotation_file)
-    if jedi is None:
+    pairs, idx = get_jedi(current_date, rotation_file)
+    if idx is None:
         pairs = generate_pairs(team_members)
-        logger.info(pairs)
         save_rotation(pairs, current_date, rotation_file)
-        jedi = get_jedi(current_date, rotation_file)
+        pairs, idx = get_jedi(current_date, rotation_file)
+    jedi = pairs[idx]
+    if idx != 0:
+        rotated_pairs = pairs[idx:] + pairs[:idx]
+        save_rotation(rotated_pairs, rotated_pairs[0][2], rotation_file)
+        pairs, idx = get_jedi(rotated_pairs[0][2], rotation_file)
+        save_rotation_html(pairs, rotated_pairs[0][2], rotation_html_file, jedi)
+    else:
+        save_rotation_html(pairs, jedi[2], rotation_html_file, jedi)
 
     logger.info(f"Jedi Info: {jedi}")
     message = (
         f"*Jedi Week:* {jedi[2]} - {jedi[3]}\n"
         f"*Jedi:* <@{jedi[0]}>, <@{jedi[1]}>\n"
-        f"Please check */root/perfscale-jedi/current_jedi_schedule.txt* in the *host:{hostname}* for the entire rotation schedule"
+        f"Please click <http://ocp-intlab-grafana.rdu2.scalelab.redhat.com:3030|here> to view rotation schedule"
     )
     payload = {
         "text": message

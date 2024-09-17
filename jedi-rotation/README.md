@@ -51,20 +51,15 @@ export HOSTNAME=$(hostname)
 python3 /root/perfscale-jedi/perfscale-jedi-notifier.py
 ```
 
-## How to check/override schedule?
-We can check the current schedule by looking at state file at path: `/root/perfscale-jedi/current_jedi_schedule.txt` in our jump host. For example
+## How to check schedule?
+Please login [here](http://ocp-intlab-grafana.rdu2.scalelab.redhat.com:3030/) to view the rotation schedule.
+
+## How to override the schedule?
+In order to override the schedule, please update the below files with appropriate user IDs in our jump host.
+* `/root/perfscale-jedi/current_jedi_schedule.txt`
+* `/usr/share/nginx/html/perfscale_jedi/index.html`
+
+If you wish to notify others about the update, please run the below commands afterwards.
 ```
-[root@ocp-intlab-grafana perfscale-jedi]# cat current_jedi_schedule.txt 
-['ancollin', 'liqcui', '2024-04-05 12:00:00', '2024-04-12 12:00:00']
-['vzepedam', 'krvoora', '2024-04-12 12:00:00', '2024-04-19 12:00:00']
-['mukrishn', 'sboyapal', '2024-04-19 12:00:00', '2024-04-26 12:00:00']
-['lhorsley', 'rsevilla', '2024-04-26 12:00:00', '2024-05-03 12:00:00']
-['vkommadi', 'msheth', '2024-05-03 12:00:00', '2024-05-10 12:00:00']
-['rzaleski', 'jlema', '2024-05-10 12:00:00', '2024-05-17 12:00:00']
-['prubenda', 'dsanzmor', '2024-05-17 12:00:00', '2024-05-24 12:00:00']
-['sninganu', 'sahshah', '2024-05-24 12:00:00', '2024-05-31 12:00:00']
-['svetsa', 'vchalla', '2024-05-31 12:00:00', '2024-06-07 12:00:00']
-['skordas', 'smanda', '2024-06-07 12:00:00', '2024-06-14 12:00:00']
-['qili', 'jtaleric', '2024-06-14 12:00:00', '2024-06-21 12:00:00']
+cd /root/perfscale-jedi; sh perfscale-jedi-notifier.sh
 ```
-In order to override the schedule, one can simply update this file's content. If interested in previous schedule, we can check it in `/root/perfscale-jedi/previous_jedi_schedule.txt` file.
