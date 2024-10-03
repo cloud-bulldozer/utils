@@ -184,6 +184,7 @@ def main():
     jedi = pairs[idx]
     if idx != 0:
         rotated_pairs = pairs[idx:] + pairs[:idx]
+        rotated_pairs[len(rotated_pairs)-2][0], rotated_pairs[len(rotated_pairs)-1][1] = rotated_pairs[len(rotated_pairs)-1][1], rotated_pairs[len(rotated_pairs)-2][0]
         save_rotation(rotated_pairs, rotated_pairs[0][2], rotation_file)
         pairs, idx = get_jedi(rotated_pairs[0][2], rotation_file)
         save_rotation_html(pairs, rotated_pairs[0][2], rotation_html_file, jedi)
