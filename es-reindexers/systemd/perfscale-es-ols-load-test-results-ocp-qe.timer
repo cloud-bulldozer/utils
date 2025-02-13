@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES OLS load test results ocp qe Timer
+Requires=perfscale-es-ols-load-test-results-ocp-qe.service
+
+[Timer]
+OnCalendar=*-*-* *:0/8:00
+Unit=perfscale-es-ols-load-test-results-ocp-qe.service
+
+[Install]
+WantedBy=timers.target

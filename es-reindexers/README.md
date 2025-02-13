@@ -161,14 +161,6 @@ systemctl status perfscale-es-estestindex.service
   * Example for VALID case: `ingress-performance` and `baseline-ingress-performance`
 
 ## Current list of configured jobs in jump host
-### Perfscale ES Dev Instance Jobs
-| Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
-| ------------------------------ | ---------------------- | ------------------ | -------------------------- | -------------------------- | -------------------------- |
-| perfscale-es-ripsaw-kube-burner-dev.timer | perfscale-es-ripsaw-kube-burner-dev.service | perfscale-es-ripsaw-kube-burner-dev.sh | ripsaw-kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* \*:\*:00 |
-| perfscale-es-kube-burner-dev.timer | perfscale-es-kube-burner-dev.service | perfscale-es-kube-burner-dev.sh | kube-burner | ospst-ripsaw-kube-burner | \*-\*-\* *:0/8:00 |
-| perfscale-es-kube-burner-ocp-dev.timer | perfscale-es-kube-burner-ocp-dev.service | perfscale-es-kube-burner-ocp-dev.sh | kube-burner-ocp | ospst-ripsaw-kube-burner | \*-\*-\* *:0/9:00 |
-| perfscale-es-ingress-performance-dev.timer | perfscale-es-ingress-performance-dev.service | perfscale-es-ingress-performance-dev.sh | ingress-performance | ospst-ingress-performance | \*-\*-\* *:0/2:00 |
-| perfscale-es-k8s-netperf-dev.timer | perfscale-es-k8s-netperf-dev.service | perfscale-es-k8s-netperf-dev.sh | k8s-netperf | ospst-k8s-netperf | \*-\*-\* \*:\*:00 |
 
 ### Perfscale ES Prod Instance Jobs
 | Timer | Service | Driver Script | Source Index | Destination Index | Cadence |
