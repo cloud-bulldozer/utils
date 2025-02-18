@@ -1,13 +1,13 @@
 [Unit]
-Description=Perfscale ES kube-burner-ocp dev sync job
-Wants=perfscale-es-kube-burner-ocp-dev.timer
+Description=Perfscale ES OLS load test results ocp qe sync job
+Wants=perfscale-es-ols-load-test-results-ocp-qe.timer
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root
 # This driver script can be found in the jump host: snowflake.rdu2.scalelab.redhat.com. Hiding it as it has contains secrets.
-ExecStart=/bin/bash perfscale-es-kube-burner-ocp-dev.sh
+ExecStart=/bin/bash perfscale-es-ols-load-test-results-ocp-qe.sh
 
 [Install]
 WantedBy=multi-user.target
