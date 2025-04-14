@@ -1,0 +1,12 @@
+[Unit]
+Description=Perfscale ES rosa-metadata prod sync job
+Wants=perfscale-es-rosa-metadata-prod.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/bin/bash perfscale-es-rosa-metadata-prod.sh
+
+[Install]
+WantedBy=multi-user.target
