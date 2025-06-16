@@ -46,7 +46,8 @@ This service unit triggers a script exposing the ENVs below used by the script t
 export TEAM_MEMBERS="ancollin,vzepedam,krvoora,vkommadi,rsevilla,msheth,jtaleric,rzaleski,mukrishn,dsanzmor,vchalla,jlema,svetsa,prubenda,sboyapal,smanda,sahshah,qili,liqcui,lhorsley,skordas,sninganu"
 export ROTATION_FILE="current_jedi_schedule.txt"
 export CURRENT_DATE=$(date -d '2 days' "+%Y-%m-%d 12:00:00")
-export WEBHOOK_URL="URL"
+export SLACK_CHANNEL_ID="XXXXXXXXXX"
+export SLACK_BOT_TOKEN="XXX-XXXX-XXXX-XXX"
 export HOSTNAME=$(hostname)
 python3 /root/perfscale-jedi/perfscale-jedi-notifier.py
 ```

@@ -3,8 +3,8 @@ import os
 import sys
 import datetime
 import logging
-import json
-import requests
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -172,10 +172,6 @@ def main():
     if not team_members:
         sys.exit("Environment variable CURRENT_DATE is not set")
 
-    webhook_url = os.getenv("WEBHOOK_URL")
-    if not webhook_url:
-        sys.exit("Environment variable WEBHOOK_URL is not set")
-
     pairs, idx = get_jedi(current_date, rotation_file)
     if idx is None:
         pairs = generate_pairs(team_members)
@@ -192,24 +188,28 @@ def main():
         save_rotation_html(pairs, jedi[2], rotation_html_file, jedi)
 
     logger.info(f"Jedi Info: {jedi}")
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    channel_id = os.getenv("SLACK_CHANNEL_ID")
+    if not slack_token or not channel_id:
+        sys.exit("Environment variables SLACK_BOT_TOKEN or SLACK_CHANNEL_ID are not set")
+
+    slack_client = WebClient(token=slack_token)
     message = (
         f"*Jedi Week:* {jedi[2]} - {jedi[3]}\n"
         f"*Jedi:* <@{jedi[0]}>, <@{jedi[1]}>\n"
         f"Please click <http://ocp-intlab-grafana.rdu2.scalelab.redhat.com:3030|here> to view rotation schedule"
     )
-    payload = {
-        "text": message
-    }
 
-    payload_json = json.dumps(payload)
-    logger.info(f"notification message preview: {payload_json}")
-    headers = {'Content-type': 'application/json'}
-    response = requests.post(webhook_url, data=payload_json, headers=headers)
-    if response.status_code == 200:
-       logger.info("Message sent over slack successfully")
-    else:
-       logger.info(f"Failed to send message. Status code: {response.status_code}")
-       logger.info(response.text)
+    logger.info(f"notification message preview: {message}")
+    try:
+        logger.info("Sending Slack message using bot token")
+        response = slack_client.chat_postMessage(
+            channel=channel_id,
+            text=message
+        )
+        logger.info(f"Message sent. Slack response ts: {response['ts']}")
+    except SlackApiError as e:
+        logger.error(f"Slack API Error: {e.response['error']}")
 
 # Driver code
 if __name__ == "__main__":
