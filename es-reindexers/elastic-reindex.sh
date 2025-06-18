@@ -66,9 +66,27 @@ START_TIME=$(date -u -d "@$min_timestamp" +'%Y-%m-%dT%H:%M:%S')
 # publishes a given list of S3 backup files to destination ES
 publish_to_destination(){
     local file_array=("$@")
-    # Iterate over the array of file names
     for file in "${file_array[@]}"; do
       echo "Processing file: $file"
+      
+      # Download file temporarily for gzip test
+      tmpfile=$(mktemp)
+      if ! AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY aws s3 cp "s3://${S3_BUCKET}/$file" "$tmpfile" > /dev/null 2>&1; then
+          echo "Failed to download $file from S3"
+          rm -f "$tmpfile"
+          continue
+      fi
+
+      # Test gzip integrity
+      if ! gunzip -t "$tmpfile" > /dev/null 2>&1; then
+          echo "Corrupt gzip file detected: $file, skipping..."
+          rm -f "$tmpfile"
+          continue
+      fi
+
+      rm -f "$tmpfile"
+
+      # Restore file to destination
       elasticdump \
         --s3AccessKeyId $AWS_ACCESS_KEY_ID \
         --s3SecretAccessKey $AWS_SECRET_ACCESS_KEY \
@@ -78,15 +96,19 @@ publish_to_destination(){
         --output="$DESTINATION_ES/$DESTINATION_INDEX" \
         --s3Compress \
         --limit 1000 \
-        --concurrency 1;
-      status=$?;
+        --concurrency 1 \
+        --skip=true;  # Important: skip bad records
+
+      status=$?
       if [ $status -ne 0 ]; then
-          echo "Failed in processing file: $file from the backup";
-          exit $status;
+          echo "elasticdump failed for $file, but continuing..."
+          continue
       fi
-      sleep 2;
+
+      sleep 2
     done
 }
+
 
 if [ "$BACKFILL" = "true" ]; then
   # Logic for a backfill job
@@ -269,6 +291,7 @@ else
     echo "Initial Destination Count: $initial_destination_count"
     echo "Current Destination Count: $current_destination_count"
     echo "Destination Count Delta: $destination_count"
+    echo "$current_end_time" > "$TOUCH_FILE"
     exit 3
   fi
 fi
