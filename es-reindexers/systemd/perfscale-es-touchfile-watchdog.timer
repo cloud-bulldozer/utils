@@ -1,0 +1,10 @@
+[Unit]
+Description=Perfscale ES touchfile watchdog Timer
+Requires=perfscale-es-touchfile-watchdog.service
+
+[Timer]
+OnCalendar=*-*-* 20:00:00
+Unit=perfscale-es-touchfile-watchdog.service
+
+[Install]
+WantedBy=timers.target

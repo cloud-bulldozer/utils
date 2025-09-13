@@ -1,0 +1,12 @@
+[Unit]
+Description=Perfscale ES Sync touchfile watchdog
+Wants=perfscale-es-touchfile-watchdog.timer
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/bin/bash perfscale-es-touchfile-watchdog.sh
+
+[Install]
+WantedBy=multi-user.target
