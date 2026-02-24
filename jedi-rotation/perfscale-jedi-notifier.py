@@ -1,10 +1,13 @@
-import random
+import json
 import os
+import random
 import sys
 import datetime
 import logging
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+
+MEMBERS_PER_SLOT = int(os.getenv("MEMBERS_PER_SLOT", 3))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,72 +17,179 @@ logging.basicConfig(
 
 logger = logging.getLogger('performance-jedi-notifier')
 
-# Function to generate pairs
-def generate_pairs(team_members):
-    random.shuffle(team_members)
-    
-    full_path = os.path.join(os.getcwd(), f"previous_jedi_schedule.txt")
+
+def load_last_rotation(full_path):
+    """Load last_rotation.json; return dict domain -> list of member ids."""
     try:
-        with open(full_path, "r") as file:
-            lines = file.readlines()
+        with open(full_path, "r") as f:
+            return json.load(f)
     except FileNotFoundError:
-        return None
+        return {}
+    except json.JSONDecodeError:
+        return {}
 
-    last_two_week_members = [eval(lines[len(lines)-1])[0], eval(lines[len(lines)-1])[1], eval(lines[len(lines)-2])[0], eval(lines[len(lines)-2])[1]]
-    result_list = list(filter(lambda x: x not in last_two_week_members, team_members))
-    mid_index = len(result_list)//2
-    result_list.insert(mid_index, last_two_week_members[3])
-    result_list.insert(mid_index, last_two_week_members[1])
-    result_list.insert(mid_index, last_two_week_members[2])
-    result_list.insert(mid_index, last_two_week_members[0])
 
-    pairs = []
-    for idx in range(0, len(result_list), 2):
-        if idx + 1 < len(result_list):
-            pairs.append((result_list[idx], result_list[idx+1]))
-    if (len(result_list) % 2 != 0):
-        pairs.append((result_list[len(result_list)-1], result_list[mid_index]))
-    return pairs
+def save_last_rotation(full_path, data):
+    """Save last_rotation.json (domain -> members)."""
+    with open(full_path, "w") as f:
+        json.dump(data, f, indent=2)
 
-# Function to get current jedi
-def get_jedi(current_date, rotation_file):
-    current_date = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
-    full_path = os.path.join(os.getcwd(), rotation_file)
-    try:
-        with open(full_path, "r") as file:
-            lines = file.readlines()
-    except FileNotFoundError:
-        return None, None
 
-    index = None
-    pairs = []
-    for idx, line in enumerate(lines):
-        data = eval(line.strip())
-        start_date = datetime.datetime.strptime(data[2], "%Y-%m-%d %H:%M:%S")
-        end_date = datetime.datetime.strptime(data[3], "%Y-%m-%d %H:%M:%S")
-        pairs.append([data[0], data[1], data[2], data[3]])
-        
-        if start_date <= current_date < end_date:
-            logger.info(f"Current date: {current_date} falls under range {start_date} - {end_date}")
-            index = idx
-    if index is not None:
-        return pairs, index
+def pick_three_members(domain, team_members_by_group, last_rotation_for_domain, all_members_list):
+    """
+    Pick exactly 3 members for this domain. Prefer members not in last rotation; if not enough, reuse.
+    If domain has < 3 members, fill from other domains at random.
+    """
+    domain_members = list(team_members_by_group.get(domain, []))
+    other_list = [m for m in all_members_list if m not in domain_members]
+    pool = list(domain_members)
+    while len(pool) < MEMBERS_PER_SLOT and other_list:
+        idx = random.randrange(len(other_list))
+        pool.append(other_list.pop(idx))
+    last_set = set(last_rotation_for_domain or [])
+    preferred = [m for m in pool if m not in last_set]
+    rest = [m for m in pool if m in last_set]
+    if len(preferred) >= MEMBERS_PER_SLOT:
+        chosen = random.sample(preferred, MEMBERS_PER_SLOT)
     else:
-        os.rename(full_path, os.path.join(os.getcwd(), f"previous_jedi_schedule.txt"))
-        return None, None
+        chosen = preferred + rest
+        chosen = chosen[:MEMBERS_PER_SLOT]
+    return chosen
 
-# Function to save rotation
-def save_rotation(pairs, current_date, rotation_file):
+
+def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_path):
+    """
+    Assign 3 members to each slot that doesn't already have 3. Prefer not in last rotation; update and save last_rotation.json.
+    Returns schedule with "members" key per entry.
+    """
+    full_path = os.path.join(os.getcwd(), last_rotation_path)
+    last_rotation = load_last_rotation(full_path)
+    all_members_list = [m for members in team_members_by_group.values() for m in members]
+
+    for entry in ordered_schedule:
+        if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
+            continue
+        domain = entry["domain"]
+        last_for_domain = last_rotation.get(domain, [])
+        members = pick_three_members(domain, team_members_by_group, last_for_domain, all_members_list)
+        entry["members"] = members
+        last_rotation[domain] = members
+
+    save_last_rotation(full_path, last_rotation)
+    return ordered_schedule
+
+
+# Function to reschedule past entries: move all slots with end_date < current_date to the end with new dates
+def reschedule_past_entries(ordered_schedule, current_date):
+    if not ordered_schedule:
+        return ordered_schedule
+    current_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
+
+    past = []
+    future = []
+    for e in ordered_schedule:
+        end_dt = datetime.datetime.strptime(e["end_date"], "%Y-%m-%d %H:%M:%S")
+        if end_dt < current_dt:
+            past.append(e)
+        else:
+            future.append(e)
+
+    if not past:
+        return ordered_schedule
+
+    # New dates for past entries start the week after the last end_date in the schedule
+    last_end_dt = max(datetime.datetime.strptime(e["end_date"], "%Y-%m-%d %H:%M:%S") for e in ordered_schedule)
+    rescheduled = []
+    for e in past:
+        start_dt = last_end_dt
+        end_dt = start_dt + datetime.timedelta(weeks=1)
+        rescheduled.append({
+            "domain": e["domain"],
+            "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        last_end_dt = end_dt
+
+    return future + rescheduled
+
+# Function to build or rotate schedule: list of {domain, start_date, end_date} ordered by start_date
+def rotate(ordered_schedule, team_members_by_group, current_date=None, index=None):
+    domains = list(team_members_by_group.keys())
+    if index is None:
+        if not current_date:
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        result = []
+        for d in domains:
+            start_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
+            end_dt = start_dt + datetime.timedelta(weeks=1)
+            result.append({"domain": d, "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"), "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S")})
+            current_date = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        return result
+    # Reorder existing schedule so domain at index is first
+    if not ordered_schedule or index is None or index >= len(ordered_schedule):
+        return ordered_schedule
+    return ordered_schedule[index:] + ordered_schedule[:index]
+
+# Function to get current jedi: load schedule JSON, order by start date, return ordered schedule and current domain
+def get_jedi(current_date, rotation_file):
+    current_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
     full_path = os.path.join(os.getcwd(), rotation_file)
-    with open(full_path, "w") as file:
-        for pair in pairs:
-            end_date = (datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S") + datetime.timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M:%S")
-            data = [pair[0], pair[1], current_date, end_date]
-            current_date = end_date
-            file.write(str(data) + "\n")
+    try:
+        with open(full_path, "r") as f:
+            schedule_by_domain = json.load(f)
+    except FileNotFoundError:
+        return [], None, None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in {rotation_file}: {e}")
+        return [], None, None
+
+    # Flatten to list of {domain, start_date, end_date, members?} (one entry per domain slot)
+    ordered = []
+    for domain, slots in schedule_by_domain.items():
+        for slot in slots:
+            entry = {
+                "domain": domain,
+                "start_date": slot["start_date"],
+                "end_date": slot["end_date"],
+            }
+            if "members" in slot:
+                entry["members"] = slot["members"]
+            ordered.append(entry)
+
+    # Order by start date
+    ordered.sort(key=lambda e: e["start_date"])
+
+    current_domain = None
+    current_index = None
+    for idx, entry in enumerate(ordered):
+        start_dt = datetime.datetime.strptime(entry["start_date"], "%Y-%m-%d %H:%M:%S")
+        end_dt = datetime.datetime.strptime(entry["end_date"], "%Y-%m-%d %H:%M:%S")
+        if start_dt <= current_dt < end_dt:
+            current_domain = entry["domain"]
+            current_index = idx
+            logger.info(f"Current date: {current_dt} falls under range {start_dt} - {end_dt}")
+            logger.info(f"Current domain: {current_domain}, index: {idx}")
+            break
+
+    return ordered, current_domain, current_index
+
+# Function to save rotation (writes schedule as JSON grouped by domain)
+def save_rotation(ordered_schedule, current_date, rotation_file):
+    full_path = os.path.join(os.getcwd(), rotation_file)
+    schedule_by_domain = {}
+    for entry in ordered_schedule:
+        d = entry["domain"]
+        if d not in schedule_by_domain:
+            schedule_by_domain[d] = []
+        slot = {"start_date": entry["start_date"], "end_date": entry["end_date"]}
+        if "members" in entry:
+            slot["members"] = entry["members"]
+        schedule_by_domain[d].append(slot)
+    with open(full_path, "w") as f:
+        json.dump(schedule_by_domain, f, indent=2)
 
 # Function to save rotation and generate stylish, responsive HTML table
-def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair):
+def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair, team_members_by_group=None):
     full_path = os.path.join(os.getcwd(), rotation_file)
     with open(full_path, "w") as file:
         file.write("""
@@ -131,23 +241,23 @@ def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair):
             <h2>PerfScale Jedi Rotation Schedule</h2>
             <table>
                 <tr>
-                    <th>Jedi 1</th>
-                    <th>Jedi 2</th>
+                    <th>Domain</th>
+                    <th>Members</th>
                     <th>Start Date</th>
                     <th>End Date</th>
                 </tr>
         """)  # Start of the HTML file and table
 
-        for pair in pairs:
-            end_date = (datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S") + datetime.timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Conditional check for highlighting the current Jedi pair with a border
-            if pair == current_jedi_pair:
-                data_row = f"<tr class='highlight'><td>{pair[0]}</td><td>{pair[1]}</td><td>{current_date}</td><td>{end_date}</td></tr>"
-            else:
-                data_row = f"<tr><td>{pair[0]}</td><td>{pair[1]}</td><td>{current_date}</td><td>{end_date}</td></tr>"
-            
-            current_date = end_date
+        for entry in pairs:
+            domain = entry["domain"]
+            start_date = entry["start_date"]
+            end_date = entry["end_date"]
+            members = entry.get("members", [])
+            members_str = ", ".join(members) if members else "—"
+            is_current = (current_jedi_pair and current_jedi_pair.get("domain") == domain and
+                         current_jedi_pair.get("start_date") == start_date)
+            row_class = "highlight" if is_current else ""
+            data_row = f"<tr class='{row_class}'><td>{domain}</td><td>{members_str}</td><td>{start_date}</td><td>{end_date}</td></tr>"
             file.write(data_row + "\n")  # Write each row of data to the HTML table
 
         # Close the table and HTML structure
@@ -159,33 +269,56 @@ def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair):
 
 # Main function to generate and save the rotation for the week
 def main():
-    team_members = os.getenv("TEAM_MEMBERS")
-    if not team_members:
-        sys.exit("Environment variable TEAM_MEMBERS is not set")
-    team_members = team_members.split(",")
+    team_members_file = os.getenv("TEAM_MEMBERS_FILE")
+    if not team_members_file:
+        sys.exit("Environment variable TEAM_MEMBERS_FILE is not set")
+    with open(team_members_file, "r") as f:
+        team_members_by_group = json.load(f)
+    team_members = [m for members in team_members_by_group.values() for m in members]
 
-    rotation_file = os.getenv("ROTATION_FILE", "current_jedi_schedule.txt")
+    rotation_file = os.getenv("ROTATION_FILE", "current_jedi_schedule.json")
     rotation_html_file = os.getenv("ROTATION_HTML_FILE", "/usr/share/nginx/html/perfscale_jedi/index.html")
+    last_rotation_file = os.getenv("LAST_ROTATION_FILE", "last_rotation.json")
     hostname = os.getenv("HOSTNAME")
 
     current_date = os.getenv("CURRENT_DATE")
-    if not team_members:
+    if not current_date:
         sys.exit("Environment variable CURRENT_DATE is not set")
 
-    pairs, idx = get_jedi(current_date, rotation_file)
-    if idx is None:
-        pairs = generate_pairs(team_members)
-        save_rotation(pairs, current_date, rotation_file)
-        pairs, idx = get_jedi(current_date, rotation_file)
-    jedi = pairs[idx]
-    if idx != 0:
-        rotated_pairs = pairs[idx:] + pairs[:idx]
-        rotated_pairs[len(rotated_pairs)-2][0], rotated_pairs[len(rotated_pairs)-1][1] = rotated_pairs[len(rotated_pairs)-1][1], rotated_pairs[len(rotated_pairs)-2][0]
-        save_rotation(rotated_pairs, rotated_pairs[0][2], rotation_file)
-        pairs, idx = get_jedi(rotated_pairs[0][2], rotation_file)
-        save_rotation_html(pairs, rotated_pairs[0][2], rotation_html_file, jedi)
+    ordered_schedule, current_domain, current_index = get_jedi(current_date, rotation_file)
+
+    # Always run rotation: reschedule any past entries to new dates at the end, or build initial schedule if empty
+    if not ordered_schedule:
+        ordered_schedule = rotate(ordered_schedule, team_members_by_group, current_date)
+        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
+        save_rotation(ordered_schedule, current_date, rotation_file)
+        logger.info("New rotation set (initial schedule):")
+        for entry in ordered_schedule:
+            logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
     else:
-        save_rotation_html(pairs, jedi[2], rotation_html_file, jedi)
+        rescheduled = reschedule_past_entries(ordered_schedule, current_date)
+        if rescheduled != ordered_schedule:
+            rescheduled = assign_members_to_schedule(rescheduled, team_members_by_group, last_rotation_file)
+            save_rotation(rescheduled, current_date, rotation_file)
+            logger.info("New rotation set (past entries rescheduled with members):")
+            for entry in rescheduled:
+                logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
+            ordered_schedule = rescheduled
+        else:
+            # Backfill members for any slot missing 3 members (e.g. old schedule format)
+            need_members = any(not entry.get("members") or len(entry.get("members", [])) != MEMBERS_PER_SLOT for entry in ordered_schedule)
+            if need_members:
+                ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
+                save_rotation(ordered_schedule, current_date, rotation_file)
+                logger.info("New rotation set (members assigned to schedule):")
+                for entry in ordered_schedule:
+                    logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
+
+    ordered_schedule, current_domain, current_index = get_jedi(current_date, rotation_file)
+    current_slot = ordered_schedule[current_index] if current_index is not None else None
+    members = current_slot.get("members", team_members_by_group.get(current_domain, [])) if current_slot else []
+    jedi = (current_domain, members, current_slot["start_date"], current_slot["end_date"]) if current_slot else None
+    save_rotation_html(ordered_schedule, current_date, rotation_html_file, current_slot, team_members_by_group)
 
     logger.info(f"Jedi Info: {jedi}")
     slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -194,9 +327,13 @@ def main():
         sys.exit("Environment variables SLACK_BOT_TOKEN or SLACK_CHANNEL_ID are not set")
 
     slack_client = WebClient(token=slack_token)
+    if not current_slot:
+        sys.exit("No current rotation slot found")
+    jedi_mentions = ", ".join(f"<@{m}>" for m in members) if members else "—"
     message = (
-        f"*Jedi Week:* {jedi[2]} - {jedi[3]}\n"
-        f"*Jedi:* <@{jedi[0]}>, <@{jedi[1]}>\n"
+        f"*Jedi Week:* {current_slot['start_date']} - {current_slot['end_date']}\n"
+        f"*Domain:* {current_domain}\n"
+        f"*Jedi:* {jedi_mentions}\n"
         f"Please click <http://ocp-intlab-grafana.rdu2.scalelab.redhat.com:3030|here> to view rotation schedule"
     )
 
