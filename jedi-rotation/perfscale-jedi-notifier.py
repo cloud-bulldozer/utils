@@ -304,15 +304,6 @@ def main():
             for entry in rescheduled:
                 logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
             ordered_schedule = rescheduled
-        else:
-            # Backfill members for any slot missing 3 members (e.g. old schedule format)
-            need_members = any(not entry.get("members") or len(entry.get("members", [])) != MEMBERS_PER_SLOT for entry in ordered_schedule)
-            if need_members:
-                ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
-                save_rotation(ordered_schedule, current_date, rotation_file)
-                logger.info("New rotation set (members assigned to schedule):")
-                for entry in ordered_schedule:
-                    logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
 
     ordered_schedule, current_domain, current_index = get_jedi(current_date, rotation_file)
     current_slot = ordered_schedule[current_index] if current_index is not None else None
