@@ -1,0 +1,15 @@
+# Runtime directories (created by git-sync and on-sync.sh)
+output/
+repo/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Web app build output and dependencies
+web/node_modules/
+web/dist/
+
+# Context files (local only)
+context.md
+DESIGN.md

@@ -1,0 +1,31 @@
+[Unit]
+Description=Git-sync for periodic CI cron visualization
+Documentation=https://github.com/kubernetes/git-sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/cronv-automation/config/cronv-automation.env
+Environment=PATH=/usr/local/bin:/usr/bin:/usr/local/go/bin
+
+ExecStart=/usr/local/bin/git-sync \
+    --repo=${REPO_URL} \
+    --ref=${REPO_REF} \
+    --root=/opt/cronv-automation/repo \
+    --link=current \
+    --depth=1 \
+    --period=${GIT_SYNC_PERIOD} \
+    --sparse-checkout-file=/opt/cronv-automation/config/sparse-checkout \
+    --exechook-command=/opt/cronv-automation/scripts/on-sync.sh \
+    --exechook-timeout=120s
+
+Restart=on-failure
+RestartSec=30s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cronv-git-sync
+
+[Install]
+WantedBy=multi-user.target
