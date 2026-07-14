@@ -7,7 +7,8 @@ import logging
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-MEMBERS_PER_SLOT = int(os.getenv("MEMBERS_PER_SLOT", 3))
+MEMBERS_PER_SLOT = int(os.getenv("MEMBERS_PER_SLOT", 2))
+DOMAIN_GROUPED = int(os.getenv("DOMAIN_GROUPED", 0))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,17 +36,20 @@ def save_last_rotation(full_path, data):
         json.dump(data, f, indent=2)
 
 
-def pick_three_members(domain, team_members_by_group, last_rotation_for_domain, all_members_list):
+def pick_members(domain, team_members_by_group, last_rotation_for_domain, all_members_list):
     """
-    Pick exactly 3 members for this domain. Prefer members not in last rotation; if not enough, reuse.
-    If domain has < 3 members, fill from other domains at random.
+    Pick MEMBERS_PER_SLOT members. When DOMAIN_GROUPED=1, prefer members from the domain.
+    When DOMAIN_GROUPED=0, pick from the entire team regardless of domain.
     """
-    domain_members = list(team_members_by_group.get(domain, []))
-    other_list = [m for m in all_members_list if m not in domain_members]
-    pool = list(domain_members)
-    while len(pool) < MEMBERS_PER_SLOT and other_list:
-        idx = random.randrange(len(other_list))
-        pool.append(other_list.pop(idx))
+    if DOMAIN_GROUPED:
+        domain_members = list(team_members_by_group.get(domain, []))
+        other_list = [m for m in all_members_list if m not in domain_members]
+        pool = list(domain_members)
+        while len(pool) < MEMBERS_PER_SLOT and other_list:
+            idx = random.randrange(len(other_list))
+            pool.append(other_list.pop(idx))
+    else:
+        pool = list(all_members_list)
     last_set = set(last_rotation_for_domain or [])
     preferred = [m for m in pool if m not in last_set]
     rest = [m for m in pool if m in last_set]
@@ -59,7 +63,7 @@ def pick_three_members(domain, team_members_by_group, last_rotation_for_domain, 
 
 def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_path):
     """
-    Assign 3 members to each slot that doesn't already have 3. Prefer not in last rotation; update and save last_rotation.json.
+    Assign MEMBERS_PER_SLOT members to each slot that doesn't already have the right count.
     Returns schedule with "members" key per entry.
     """
     full_path = os.path.join(os.getcwd(), last_rotation_path)
@@ -71,7 +75,7 @@ def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rot
             continue
         domain = entry["domain"]
         last_for_domain = last_rotation.get(domain, [])
-        members = pick_three_members(domain, team_members_by_group, last_for_domain, all_members_list)
+        members = pick_members(domain, team_members_by_group, last_for_domain, all_members_list)
         entry["members"] = members
         last_rotation[domain] = members
 
@@ -192,17 +196,18 @@ def save_rotation(ordered_schedule, current_date, rotation_file):
 def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair, team_members_by_group=None):
     full_path = os.path.join(os.getcwd(), rotation_file)
     with open(full_path, "w") as file:
-        file.write("""
+        domain_th = "<th>Domain</th>" if DOMAIN_GROUPED else ""
+        file.write(f"""
         <html>
         <head>
             <style>
-                body {
+                body {{
                     font-family: Arial, sans-serif;
                     margin: 0;
                     padding: 20px;
                     background-color: #f9f9f9;
-                }
-                h2 {
+                }}
+                h2 {{
                     text-align: center;
                     color: #333333;
                     margin: 0;
@@ -210,43 +215,43 @@ def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair, te
                     border: 2px solid #333333;
                     padding: 10px 0px;
                     background-color: #f9f9f9;
-                }
-                table {
+                }}
+                table {{
                     width: 100%;
                     font-family: Arial, sans-serif;
                     border-collapse: collapse;
-                }
-                th, td {
+                }}
+                th, td {{
                     border: 1px solid #dddddd;
                     text-align: left;
                     padding: 12px 15px;
-                }
-                tr:nth-child(even) {
+                }}
+                tr:nth-child(even) {{
                     background-color: #f2f2f2;
-                }
-                th {
+                }}
+                th {{
                     background-color: #04AA6D;
                     color: white;
-                }
-                tr:hover {
-                    background-color: #f1f1f1; /* Hover effect for table rows */
-                }
-                .highlight {
-                    border: 3px solid #FFCD00; /* Highlight border for current Jedi */
+                }}
+                tr:hover {{
+                    background-color: #f1f1f1;
+                }}
+                .highlight {{
+                    border: 3px solid #FFCD00;
                     font-weight: bold;
-                }
+                }}
             </style>
         </head>
         <body>
             <h2>PerfScale Jedi Rotation Schedule</h2>
             <table>
                 <tr>
-                    <th>Domain</th>
+                    {domain_th}
                     <th>Members</th>
                     <th>Start Date</th>
                     <th>End Date</th>
                 </tr>
-        """)  # Start of the HTML file and table
+        """)
 
         for entry in pairs:
             domain = entry["domain"]
@@ -257,8 +262,9 @@ def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair, te
             is_current = (current_jedi_pair and current_jedi_pair.get("domain") == domain and
                          current_jedi_pair.get("start_date") == start_date)
             row_class = "highlight" if is_current else ""
-            data_row = f"<tr class='{row_class}'><td>{domain}</td><td>{members_str}</td><td>{start_date}</td><td>{end_date}</td></tr>"
-            file.write(data_row + "\n")  # Write each row of data to the HTML table
+            domain_td = f"<td>{domain}</td>" if DOMAIN_GROUPED else ""
+            data_row = f"<tr class='{row_class}'>{domain_td}<td>{members_str}</td><td>{start_date}</td><td>{end_date}</td></tr>"
+            file.write(data_row + "\n")
 
         # Close the table and HTML structure
         file.write("""
@@ -296,14 +302,12 @@ def main():
         for entry in ordered_schedule:
             logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
     else:
-        rescheduled = reschedule_past_entries(ordered_schedule, current_date)
-        if rescheduled != ordered_schedule:
-            rescheduled = assign_members_to_schedule(rescheduled, team_members_by_group, last_rotation_file)
-            save_rotation(rescheduled, current_date, rotation_file)
-            logger.info("New rotation set (past entries rescheduled with members):")
-            for entry in rescheduled:
-                logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
-            ordered_schedule = rescheduled
+        ordered_schedule = reschedule_past_entries(ordered_schedule, current_date)
+        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
+        save_rotation(ordered_schedule, current_date, rotation_file)
+        logger.info("Rotation updated:")
+        for entry in ordered_schedule:
+            logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
 
     ordered_schedule, current_domain, current_index = get_jedi(current_date, rotation_file)
     current_slot = ordered_schedule[current_index] if current_index is not None else None
@@ -321,9 +325,10 @@ def main():
     if not current_slot:
         sys.exit("No current rotation slot found")
     jedi_mentions = ", ".join(f"<@{m}>" for m in members) if members else "—"
+    domain_line = f"*Domain:* {current_domain}\n" if DOMAIN_GROUPED else ""
     message = (
         f"*Jedi Week:* {current_slot['start_date']} - {current_slot['end_date']}\n"
-        f"*Domain:* {current_domain}\n"
+        f"{domain_line}"
         f"*Jedi:* {jedi_mentions}\n"
         f"Please click <http://ocp-intlab-grafana.rdu2.scalelab.redhat.com:3030|here> to view rotation schedule"
     )
