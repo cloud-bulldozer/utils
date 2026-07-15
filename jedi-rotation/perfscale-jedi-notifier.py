@@ -81,7 +81,7 @@ def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rot
             last_rotation[domain] = members
     else:
         recent = list(last_rotation.get("_global", []))
-        max_recent = MEMBERS_PER_SLOT * 2
+        max_recent = len(all_members_list) - MEMBERS_PER_SLOT
         for entry in ordered_schedule:
             if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
                 continue
