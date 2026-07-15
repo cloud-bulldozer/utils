@@ -70,14 +70,31 @@ def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rot
     last_rotation = load_last_rotation(full_path)
     all_members_list = [m for members in team_members_by_group.values() for m in members]
 
-    for entry in ordered_schedule:
-        if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
-            continue
-        domain = entry["domain"]
-        last_for_domain = last_rotation.get(domain, [])
-        members = pick_members(domain, team_members_by_group, last_for_domain, all_members_list)
-        entry["members"] = members
-        last_rotation[domain] = members
+    if DOMAIN_GROUPED:
+        for entry in ordered_schedule:
+            if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
+                continue
+            domain = entry["domain"]
+            last_for_domain = last_rotation.get(domain, [])
+            members = pick_members(domain, team_members_by_group, last_for_domain, all_members_list)
+            entry["members"] = members
+            last_rotation[domain] = members
+    else:
+        recent = list(last_rotation.get("_global", []))
+        max_recent = len(all_members_list) - MEMBERS_PER_SLOT
+        for entry in ordered_schedule:
+            if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
+                continue
+            available = [m for m in all_members_list if m not in recent]
+            if len(available) < MEMBERS_PER_SLOT:
+                recent.clear()
+                available = list(all_members_list)
+            members = random.sample(available, min(MEMBERS_PER_SLOT, len(available)))
+            entry["members"] = members
+            recent.extend(members)
+            if len(recent) > max_recent:
+                recent = recent[-max_recent:]
+        last_rotation["_global"] = recent
 
     save_last_rotation(full_path, last_rotation)
     return ordered_schedule
@@ -108,7 +125,7 @@ def reschedule_past_entries(ordered_schedule, current_date):
         start_dt = last_end_dt
         end_dt = start_dt + datetime.timedelta(weeks=1)
         rescheduled.append({
-            "domain": e["domain"],
+            "domain": e.get("domain", "global"),
             "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
         })
@@ -123,11 +140,20 @@ def rotate(ordered_schedule, team_members_by_group, current_date=None, index=Non
         if not current_date:
             current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         result = []
-        for d in domains:
-            start_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
-            end_dt = start_dt + datetime.timedelta(weeks=1)
-            result.append({"domain": d, "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"), "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S")})
-            current_date = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        if DOMAIN_GROUPED:
+            for d in domains:
+                start_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
+                end_dt = start_dt + datetime.timedelta(weeks=1)
+                result.append({"domain": d, "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"), "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S")})
+                current_date = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            all_members = [m for members in team_members_by_group.values() for m in members]
+            num_slots = max(1, len(all_members) // MEMBERS_PER_SLOT)
+            for i in range(num_slots):
+                start_dt = datetime.datetime.strptime(current_date, "%Y-%m-%d %H:%M:%S")
+                end_dt = start_dt + datetime.timedelta(weeks=1)
+                result.append({"domain": "global", "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"), "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S")})
+                current_date = end_dt.strftime("%Y-%m-%d %H:%M:%S")
         return result
     # Reorder existing schedule so domain at index is first
     if not ordered_schedule or index is None or index >= len(ordered_schedule):
@@ -180,17 +206,25 @@ def get_jedi(current_date, rotation_file):
 # Function to save rotation (writes schedule as JSON grouped by domain)
 def save_rotation(ordered_schedule, current_date, rotation_file):
     full_path = os.path.join(os.getcwd(), rotation_file)
-    schedule_by_domain = {}
-    for entry in ordered_schedule:
-        d = entry["domain"]
-        if d not in schedule_by_domain:
-            schedule_by_domain[d] = []
-        slot = {"start_date": entry["start_date"], "end_date": entry["end_date"]}
-        if "members" in entry:
-            slot["members"] = entry["members"]
-        schedule_by_domain[d].append(slot)
+    if DOMAIN_GROUPED:
+        schedule_out = {}
+        for entry in ordered_schedule:
+            d = entry["domain"]
+            if d not in schedule_out:
+                schedule_out[d] = []
+            slot = {"start_date": entry["start_date"], "end_date": entry["end_date"]}
+            if "members" in entry:
+                slot["members"] = entry["members"]
+            schedule_out[d].append(slot)
+    else:
+        schedule_out = {"global": []}
+        for entry in ordered_schedule:
+            slot = {"start_date": entry["start_date"], "end_date": entry["end_date"]}
+            if "members" in entry:
+                slot["members"] = entry["members"]
+            schedule_out["global"].append(slot)
     with open(full_path, "w") as f:
-        json.dump(schedule_by_domain, f, indent=2)
+        json.dump(schedule_out, f, indent=2)
 
 # Function to save rotation and generate stylish, responsive HTML table
 def save_rotation_html(pairs, current_date, rotation_file, current_jedi_pair, team_members_by_group=None):
