@@ -45,6 +45,29 @@ def pick_members(domain, team_members_by_group, last_rotation_for_domain, all_me
     return chosen
 
 
+def remove_invalid_members(ordered_schedule, team_members_by_group):
+    """Remove members from schedule slots who are no longer in the team file.
+
+    When a member is evicted, all subsequent slots are cleared and reassigned
+    to avoid duplicates (the assignment logic only tracks backwards).
+    """
+    all_members = set(m for members in team_members_by_group.values() for m in members)
+    eviction_found = False
+    for entry in ordered_schedule:
+        if "members" not in entry:
+            continue
+        if eviction_found:
+            entry.pop("members")
+            continue
+        valid = [m for m in entry["members"] if m in all_members]
+        removed = set(entry["members"]) - set(valid)
+        if removed:
+            logger.info(f"Evicting removed members {removed} from slot {entry['start_date']} - {entry['end_date']}")
+            entry["members"] = valid
+            eviction_found = True
+    return ordered_schedule
+
+
 def assign_members_to_schedule(ordered_schedule, team_members_by_group):
     """
     Assign MEMBERS_PER_SLOT members to each slot that doesn't already have the right count.
@@ -352,6 +375,7 @@ def main():
     else:
         ordered_schedule = reschedule_past_entries(ordered_schedule, current_date)
         ordered_schedule = sync_schedule_slots(ordered_schedule, team_members_by_group)
+        ordered_schedule = remove_invalid_members(ordered_schedule, team_members_by_group)
         ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group)
         save_rotation(ordered_schedule, current_date, rotation_file)
         logger.info("Rotation updated:")
