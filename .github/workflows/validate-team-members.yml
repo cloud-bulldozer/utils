@@ -1,0 +1,31 @@
+name: Validate team_members.json
+
+on:
+  push:
+    paths:
+      - 'jedi-rotation/team_members.json'
+  pull_request:
+    paths:
+      - 'jedi-rotation/team_members.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON format and structure
+        run: |
+          FILE="jedi-rotation/team_members.json"
+
+          # Validate JSON syntax and structure: object with string arrays as values
+          jq -e 'type == "object" and (to_entries | all(.value | type == "array" and length > 0 and all(type == "string")))' "$FILE" > /dev/null
+
+          # Check for duplicate members across teams
+          DUPES=$(jq -r '[.[] | .[]] | group_by(.) | map(select(length > 1) | .[0]) | .[]' "$FILE")
+          if [ -n "$DUPES" ]; then
+            echo "ERROR: Duplicate members found: $DUPES"
+            exit 1
+          fi
+
+          echo "OK: $(jq 'length' "$FILE") teams, $(jq '[.[] | .[]] | length' "$FILE") members validated"
