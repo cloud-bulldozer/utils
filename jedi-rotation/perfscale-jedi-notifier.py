@@ -19,22 +19,6 @@ logging.basicConfig(
 logger = logging.getLogger('performance-jedi-notifier')
 
 
-def load_last_rotation(full_path):
-    """Load last_rotation.json; return dict domain -> list of member ids."""
-    try:
-        with open(full_path, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        return {}
-
-
-def save_last_rotation(full_path, data):
-    """Save last_rotation.json (domain -> members)."""
-    with open(full_path, "w") as f:
-        json.dump(data, f, indent=2)
-
 
 def pick_members(domain, team_members_by_group, last_rotation_for_domain, all_members_list):
     """
@@ -61,13 +45,35 @@ def pick_members(domain, team_members_by_group, last_rotation_for_domain, all_me
     return chosen
 
 
-def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_path):
+def remove_invalid_members(ordered_schedule, team_members_by_group):
+    """Remove members from schedule slots who are no longer in the team file.
+
+    When a member is evicted, all subsequent slots are cleared and reassigned
+    to avoid duplicates (the assignment logic only tracks backwards).
+    """
+    all_members = set(m for members in team_members_by_group.values() for m in members)
+    eviction_found = False
+    for entry in ordered_schedule:
+        if "members" not in entry:
+            continue
+        if eviction_found:
+            entry.pop("members")
+            continue
+        valid = [m for m in entry["members"] if m in all_members]
+        removed = set(entry["members"]) - set(valid)
+        if removed:
+            logger.info(f"Evicting removed members {removed} from slot {entry['start_date']} - {entry['end_date']}")
+            entry["members"] = valid
+            eviction_found = True
+    return ordered_schedule
+
+
+def assign_members_to_schedule(ordered_schedule, team_members_by_group):
     """
     Assign MEMBERS_PER_SLOT members to each slot that doesn't already have the right count.
+    Tracks recently assigned members from the schedule itself (no external file needed).
     Returns schedule with "members" key per entry.
     """
-    full_path = os.path.join(os.getcwd(), last_rotation_path)
-    last_rotation = load_last_rotation(full_path)
     all_members_list = [m for members in team_members_by_group.values() for m in members]
 
     if DOMAIN_GROUPED:
@@ -75,16 +81,22 @@ def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rot
             if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
                 continue
             domain = entry["domain"]
-            last_for_domain = last_rotation.get(domain, [])
+            last_for_domain = entry.pop("previous_members", [])
             members = pick_members(domain, team_members_by_group, last_for_domain, all_members_list)
             entry["members"] = members
-            last_rotation[domain] = members
     else:
-        recent = list(last_rotation.get("_global", []))
+        recent = []
         max_recent = len(all_members_list) - MEMBERS_PER_SLOT
         for entry in ordered_schedule:
             if entry.get("members") and len(entry["members"]) == MEMBERS_PER_SLOT:
+                recent.extend(entry["members"])
+                if len(recent) > max_recent:
+                    recent = recent[-max_recent:]
                 continue
+            previous = entry.pop("previous_members", [])
+            recent.extend(previous)
+            if len(recent) > max_recent:
+                recent = recent[-max_recent:]
             available = [m for m in all_members_list if m not in recent]
             if len(available) < MEMBERS_PER_SLOT:
                 recent.clear()
@@ -94,9 +106,32 @@ def assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rot
             recent.extend(members)
             if len(recent) > max_recent:
                 recent = recent[-max_recent:]
-        last_rotation["_global"] = recent
 
-    save_last_rotation(full_path, last_rotation)
+    return ordered_schedule
+
+
+def sync_schedule_slots(ordered_schedule, team_members_by_group):
+    """Add or remove slots so the schedule matches the current team size."""
+    if DOMAIN_GROUPED:
+        return ordered_schedule
+    all_members = [m for members in team_members_by_group.values() for m in members]
+    target_slots = max(1, len(all_members) // MEMBERS_PER_SLOT)
+    current_slots = len(ordered_schedule)
+    if current_slots == target_slots:
+        return ordered_schedule
+    if current_slots < target_slots:
+        last_end = max(datetime.datetime.strptime(e["end_date"], "%Y-%m-%d %H:%M:%S") for e in ordered_schedule)
+        for _ in range(target_slots - current_slots):
+            start_dt = last_end
+            end_dt = start_dt + datetime.timedelta(weeks=1)
+            ordered_schedule.append({
+                "domain": "global",
+                "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            last_end = end_dt
+    else:
+        ordered_schedule = ordered_schedule[:target_slots]
     return ordered_schedule
 
 
@@ -124,11 +159,14 @@ def reschedule_past_entries(ordered_schedule, current_date):
     for e in past:
         start_dt = last_end_dt
         end_dt = start_dt + datetime.timedelta(weeks=1)
-        rescheduled.append({
+        entry = {
             "domain": e.get("domain", "global"),
             "start_date": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "end_date": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
-        })
+        }
+        if e.get("members"):
+            entry["previous_members"] = e["members"]
+        rescheduled.append(entry)
         last_end_dt = end_dt
 
     return future + rescheduled
@@ -318,7 +356,6 @@ def main():
 
     rotation_file = os.getenv("ROTATION_FILE", "current_jedi_schedule.json")
     rotation_html_file = os.getenv("ROTATION_HTML_FILE", "/usr/share/nginx/html/perfscale_jedi/index.html")
-    last_rotation_file = os.getenv("LAST_ROTATION_FILE", "last_rotation.json")
     hostname = os.getenv("HOSTNAME")
 
     current_date = os.getenv("CURRENT_DATE")
@@ -330,14 +367,16 @@ def main():
     # Always run rotation: reschedule any past entries to new dates at the end, or build initial schedule if empty
     if not ordered_schedule:
         ordered_schedule = rotate(ordered_schedule, team_members_by_group, current_date)
-        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
+        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group)
         save_rotation(ordered_schedule, current_date, rotation_file)
         logger.info("New rotation set (initial schedule):")
         for entry in ordered_schedule:
             logger.info(f"  {entry['domain']}: {entry.get('members', [])}")
     else:
         ordered_schedule = reschedule_past_entries(ordered_schedule, current_date)
-        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group, last_rotation_file)
+        ordered_schedule = sync_schedule_slots(ordered_schedule, team_members_by_group)
+        ordered_schedule = remove_invalid_members(ordered_schedule, team_members_by_group)
+        ordered_schedule = assign_members_to_schedule(ordered_schedule, team_members_by_group)
         save_rotation(ordered_schedule, current_date, rotation_file)
         logger.info("Rotation updated:")
         for entry in ordered_schedule:
