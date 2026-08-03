@@ -41,6 +41,9 @@ BACKFILL_INDEX=${BACKFILL_INDEX:-$SOURCE_INDEX}
 BACKFILL_DRY_RUN=${BACKFILL_DRY_RUN:-false}
 TIMESTAMP_FIELD=${TIMESTAMP_FIELD:-"timestamp"}
 send_notification="false"
+RESTORE_FAILED=false
+TOTAL_RESTORE_WRITES=0
+TOTAL_INPUT_DOCS=0
 
 # Create a directory name based on START_TIME and END_TIME
 START_TIME=${START_TIME:-$(date -d '2 days ago' +'%Y-%m-%dT%H:%M:%S')};
@@ -68,6 +71,7 @@ publish_to_destination(){
     local file_array=("$@")
     RESTORE_FAILED=false
     TOTAL_RESTORE_WRITES=0
+    TOTAL_INPUT_DOCS=0
 
     for file in "${file_array[@]}"; do
       echo "Processing file: $file"
@@ -89,6 +93,8 @@ publish_to_destination(){
           continue
       fi
 
+      file_doc_count=$(zcat "$tmpfile" | wc -l)
+      TOTAL_INPUT_DOCS=$((TOTAL_INPUT_DOCS + file_doc_count))
       rm -f "$tmpfile"
 
       # Restore file to destination and capture Total Writes
@@ -162,6 +168,24 @@ if [ "$BACKFILL" = "true" ]; then
   else
     # publishes the list of backup files to destination
     publish_to_destination "${backup_list[@]}"
+    echo "Backfill reconciliation:"
+    echo "  Files processed:      ${#backup_list[@]}"
+    echo "  S3 Input Docs:       $TOTAL_INPUT_DOCS"
+    echo "  Restore Total Writes: $TOTAL_RESTORE_WRITES"
+    echo "  Restore Failures:    $RESTORE_FAILED"
+    if [ "$RESTORE_FAILED" = "true" ]; then
+        echo "BACKFILL RESTORE FAILED: one or more files failed during restore"
+        exit 1
+    fi
+    if [ "${#backup_list[@]}" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "BACKFILL FAILED: processed ${#backup_list[@]} files but restored 0 docs"
+        exit 1
+    fi
+    if [ "$TOTAL_INPUT_DOCS" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$TOTAL_INPUT_DOCS" ]; then
+        gap=$((TOTAL_INPUT_DOCS - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs from S3 were not confirmed by destination (mapping/schema issues)"
+    fi
+    echo "Backfill reconciliation passed"
   fi
 else
   SOURCE_QUERY='
@@ -194,7 +218,7 @@ else
       if [ "$REINDEX_ONLY" = "true" ]; then
         check_destination_variables
         echo "Performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
-        elasticdump \
+        reindex_output=$(elasticdump \
           --type=data \
           --input="$SOURCE_ES/$SOURCE_INDEX" \
           --output="$DESTINATION_ES/$DESTINATION_INDEX" \
@@ -209,8 +233,11 @@ else
                 }
               }
             }
-          }';
+          }' 2>&1);
           status=$?;
+          echo "$reindex_output"
+          reindex_writes=$(echo "$reindex_output" | grep -oP 'Total Writes:\s*\K[0-9]+')
+          TOTAL_RESTORE_WRITES=$((TOTAL_RESTORE_WRITES + ${reindex_writes:-0}))
           if [ $status -ne 0 ]; then
               echo "Failed in performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
               exit $status;
@@ -298,29 +325,43 @@ else
 
       fi
   done
-  # Reconciliation: verify backup-to-restore integrity using elasticdump's Total Writes
-  echo "Reconciliation:"
-  echo "  Source Count:         $source_count"
-  echo "  Backup Total Writes: $total_backup_writes"
-  echo "  Restore Total Writes: $TOTAL_RESTORE_WRITES"
-  echo "  Restore Failures:    $RESTORE_FAILED"
+  if [ "$REINDEX_ONLY" = "true" ]; then
+    echo "Reconciliation (direct reindex):"
+    echo "  Source Count:         $source_count"
+    echo "  Reindex Total Writes: $TOTAL_RESTORE_WRITES"
+    if [ "$source_count" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "RECONCILIATION FAILED: source has $source_count docs but reindex wrote 0"
+        exit 1
+    fi
+    if [ "$source_count" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$source_count" ]; then
+        gap=$((source_count - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs gap between source count and reindex writes (may be source-side indexing or schema rejection)"
+    fi
+  else
+    # Reconciliation: verify backup-to-restore integrity using elasticdump's Total Writes
+    echo "Reconciliation:"
+    echo "  Source Count:         $source_count"
+    echo "  Backup Total Writes: $total_backup_writes"
+    echo "  Restore Total Writes: $TOTAL_RESTORE_WRITES"
+    echo "  Restore Failures:    $RESTORE_FAILED"
 
-  # Check 1: Did any file hard-fail during restore? (transient — retry will help)
-  if [ "$RESTORE_FAILED" = "true" ]; then
-      echo "RECONCILIATION FAILED: one or more files failed during restore"
-      exit 1
-  fi
+    # Check 1: Did any file hard-fail during restore? (transient — retry will help)
+    if [ "$RESTORE_FAILED" = "true" ]; then
+        echo "RECONCILIATION FAILED: one or more files failed during restore"
+        exit 1
+    fi
 
-  # Check 2: Did backup produce data but restore confirmed nothing? (catastrophic)
-  if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
-      echo "RECONCILIATION FAILED: backed up $total_backup_writes docs but restored 0"
-      exit 1
-  fi
+    # Check 2: Did backup produce data but restore confirmed nothing? (catastrophic)
+    if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "RECONCILIATION FAILED: backed up $total_backup_writes docs but restored 0"
+        exit 1
+    fi
 
-  # Check 3: Were some docs rejected by destination? (permanent — log, don't block)
-  if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$total_backup_writes" ]; then
-      gap=$((total_backup_writes - TOTAL_RESTORE_WRITES))
-      echo "WARNING: $gap docs rejected by destination (mapping/schema issues)"
+    # Check 3: Were some docs rejected by destination? (permanent — log, don't block)
+    if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$total_backup_writes" ]; then
+        gap=$((total_backup_writes - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs rejected by destination (mapping/schema issues)"
+    fi
   fi
 
   echo "Reconciliation passed"
