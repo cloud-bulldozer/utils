@@ -69,9 +69,6 @@ START_TIME=$(date -u -d "@$min_timestamp" +'%Y-%m-%dT%H:%M:%S')
 # publishes a given list of S3 backup files to destination ES
 publish_to_destination(){
     local file_array=("$@")
-    RESTORE_FAILED=false
-    TOTAL_RESTORE_WRITES=0
-    TOTAL_INPUT_DOCS=0
 
     for file in "${file_array[@]}"; do
       echo "Processing file: $file"
@@ -119,7 +116,7 @@ publish_to_destination(){
           continue
       fi
 
-      file_writes=$(echo "$dump_output" | grep -oP 'Total Writes:\s*\K[0-9]+')
+      file_writes=$(echo "$dump_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
       TOTAL_RESTORE_WRITES=$((TOTAL_RESTORE_WRITES + ${file_writes:-0}))
       echo "OK: $file -> $file_writes docs confirmed by destination"
 
@@ -236,7 +233,7 @@ else
           }' 2>&1);
           status=$?;
           echo "$reindex_output"
-          reindex_writes=$(echo "$reindex_output" | grep -oP 'Total Writes:\s*\K[0-9]+')
+          reindex_writes=$(echo "$reindex_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
           TOTAL_RESTORE_WRITES=$((TOTAL_RESTORE_WRITES + ${reindex_writes:-0}))
           if [ $status -ne 0 ]; then
               echo "Failed in performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
@@ -302,7 +299,7 @@ else
             echo "Failed in backing up data for $SOURCE_ES/$SOURCE_INDEX";
             exit $status;
         fi
-        file_backup_writes=$(echo "$backup_output" | grep -oP 'Total Writes:\s*\K[0-9]+')
+        file_backup_writes=$(echo "$backup_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
         total_backup_writes=$((total_backup_writes + ${file_backup_writes:-0}))
         echo "Finished backing up $SOURCE_ES/$SOURCE_INDEX";
         if [ "$BACKUP_ONLY" = "true" ]; then
