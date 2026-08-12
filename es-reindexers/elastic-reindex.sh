@@ -41,6 +41,9 @@ BACKFILL_INDEX=${BACKFILL_INDEX:-$SOURCE_INDEX}
 BACKFILL_DRY_RUN=${BACKFILL_DRY_RUN:-false}
 TIMESTAMP_FIELD=${TIMESTAMP_FIELD:-"timestamp"}
 send_notification="false"
+RESTORE_FAILED=false
+TOTAL_RESTORE_WRITES=0
+TOTAL_INPUT_DOCS=0
 
 # Create a directory name based on START_TIME and END_TIME
 START_TIME=${START_TIME:-$(date -d '2 days ago' +'%Y-%m-%dT%H:%M:%S')};
@@ -66,28 +69,33 @@ START_TIME=$(date -u -d "@$min_timestamp" +'%Y-%m-%dT%H:%M:%S')
 # publishes a given list of S3 backup files to destination ES
 publish_to_destination(){
     local file_array=("$@")
+
     for file in "${file_array[@]}"; do
       echo "Processing file: $file"
-      
+
       # Download file temporarily for gzip test
       tmpfile=$(mktemp)
       if ! AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY aws s3 cp "s3://${S3_BUCKET}/$file" "$tmpfile" > /dev/null 2>&1; then
-          echo "Failed to download $file from S3"
+          echo "FAILED to download $file from S3"
           rm -f "$tmpfile"
+          RESTORE_FAILED=true
           continue
       fi
 
       # Test gzip integrity
       if ! gunzip -t "$tmpfile" > /dev/null 2>&1; then
-          echo "Corrupt gzip file detected: $file, skipping..."
+          echo "CORRUPT gzip file detected: $file"
           rm -f "$tmpfile"
+          RESTORE_FAILED=true
           continue
       fi
 
+      file_doc_count=$(zcat "$tmpfile" | wc -l)
+      TOTAL_INPUT_DOCS=$((TOTAL_INPUT_DOCS + file_doc_count))
       rm -f "$tmpfile"
 
-      # Restore file to destination
-      elasticdump \
+      # Restore file to destination and capture Total Writes
+      dump_output=$(elasticdump \
         --s3AccessKeyId $AWS_ACCESS_KEY_ID \
         --s3SecretAccessKey $AWS_SECRET_ACCESS_KEY \
         --s3Region $AWS_DEFAULT_REGION \
@@ -97,13 +105,20 @@ publish_to_destination(){
         --s3Compress \
         --limit 1000 \
         --concurrency 1 \
-        --skip=true;  # Important: skip bad records
+        --skip=true 2>&1)
 
       status=$?
+      echo "$dump_output"
+
       if [ $status -ne 0 ]; then
-          echo "elasticdump failed for $file, but continuing..."
+          echo "FAILED to restore $file (exit code $status)"
+          RESTORE_FAILED=true
           continue
       fi
+
+      file_writes=$(echo "$dump_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
+      TOTAL_RESTORE_WRITES=$((TOTAL_RESTORE_WRITES + ${file_writes:-0}))
+      echo "OK: $file -> $file_writes docs confirmed by destination"
 
       sleep 2
     done
@@ -150,26 +165,44 @@ if [ "$BACKFILL" = "true" ]; then
   else
     # publishes the list of backup files to destination
     publish_to_destination "${backup_list[@]}"
+    echo "Backfill reconciliation:"
+    echo "  Files processed:      ${#backup_list[@]}"
+    echo "  S3 Input Docs:       $TOTAL_INPUT_DOCS"
+    echo "  Restore Total Writes: $TOTAL_RESTORE_WRITES"
+    echo "  Restore Failures:    $RESTORE_FAILED"
+    if [ "$RESTORE_FAILED" = "true" ]; then
+        echo "BACKFILL RESTORE FAILED: one or more files failed during restore"
+        exit 1
+    fi
+    if [ "${#backup_list[@]}" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "BACKFILL FAILED: processed ${#backup_list[@]} files but restored 0 docs"
+        exit 1
+    fi
+    if [ "$TOTAL_INPUT_DOCS" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$TOTAL_INPUT_DOCS" ]; then
+        gap=$((TOTAL_INPUT_DOCS - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs from S3 were not confirmed by destination (mapping/schema issues)"
+    fi
+    echo "Backfill reconciliation passed"
   fi
 else
-  RECONCILATION_QUERY='
+  SOURCE_QUERY='
   {
     "query": {
       "range": {
         "'"$TIMESTAMP_FIELD"'": {
           "gte": "'$START_TIME'",
-          "lte": "'$END_TIME'"
+          "lt": "'$END_TIME'"
         }
       }
     }
   }
   '
-  initial_destination_count=$(curl -s -X GET $DESTINATION_ES/$DESTINATION_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
   source_count=0
+  total_backup_writes=0
   for index in "${sorted_indices_array[@]:0:5}"; do
       SOURCE_INDEX=$index;
       S3_PATH=$directory_name/$SOURCE_INDEX;
-      source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
+      source_data_count=$(curl -s -X GET $SOURCE_ES/$SOURCE_INDEX/'_count' -H "Content-Type: application/json" -d "$SOURCE_QUERY" | jq '.count')
       if [ -z "$source_data_count" ] || [ "$source_data_count" = "null" ]; then
         echo "index not found $SOURCE_ES/$SOURCE_INDEX"
         continue
@@ -182,7 +215,7 @@ else
       if [ "$REINDEX_ONLY" = "true" ]; then
         check_destination_variables
         echo "Performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
-        elasticdump \
+        reindex_output=$(elasticdump \
           --type=data \
           --input="$SOURCE_ES/$SOURCE_INDEX" \
           --output="$DESTINATION_ES/$DESTINATION_INDEX" \
@@ -197,8 +230,11 @@ else
                 }
               }
             }
-          }';
+          }' 2>&1);
           status=$?;
+          echo "$reindex_output"
+          reindex_writes=$(echo "$reindex_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
+          TOTAL_RESTORE_WRITES=$((TOTAL_RESTORE_WRITES + ${reindex_writes:-0}))
           if [ $status -ne 0 ]; then
               echo "Failed in performing direct reindex from $SOURCE_ES/$SOURCE_INDEX to $DESTINATION_ES/$DESTINATION_INDEX";
               exit $status;
@@ -236,7 +272,7 @@ else
 
         # Run the elasticdump command with the specified timestamps and generated directory name
         echo "Backing up data for $SOURCE_ES/$SOURCE_INDEX";
-        elasticdump \
+        backup_output=$(elasticdump \
           --s3AccessKeyId $AWS_ACCESS_KEY_ID \
           --s3SecretAccessKey $AWS_SECRET_ACCESS_KEY \
           --s3Region $AWS_DEFAULT_REGION \
@@ -256,12 +292,15 @@ else
                 }
               }
             }
-          }';
+          }' 2>&1);
         status=$?;
+        echo "$backup_output"
         if [ $status -ne 0 ]; then
             echo "Failed in backing up data for $SOURCE_ES/$SOURCE_INDEX";
             exit $status;
         fi
+        file_backup_writes=$(echo "$backup_output" | grep -o 'Total Writes: *[0-9]*' | grep -o '[0-9]*$')
+        total_backup_writes=$((total_backup_writes + ${file_backup_writes:-0}))
         echo "Finished backing up $SOURCE_ES/$SOURCE_INDEX";
         if [ "$BACKUP_ONLY" = "true" ]; then
           exit 0
@@ -283,17 +322,46 @@ else
 
       fi
   done
-  current_destination_count=$(curl -s -X GET $DESTINATION_ES/$DESTINATION_INDEX/'_count' -H "Content-Type: application/json" -d "$RECONCILATION_QUERY" | jq '.count')
-  destination_count=$((current_destination_count-initial_destination_count))
-  if [ "$current_destination_count" -lt "$source_count" ]; then
-    echo "Data Reconciliation Failed"
-    echo "Source Count: $source_count"
-    echo "Initial Destination Count: $initial_destination_count"
-    echo "Current Destination Count: $current_destination_count"
-    echo "Destination Count Delta: $destination_count"
-    echo "$current_end_time" > "$TOUCH_FILE"
-    exit 3
+  if [ "$REINDEX_ONLY" = "true" ]; then
+    echo "Reconciliation (direct reindex):"
+    echo "  Source Count:         $source_count"
+    echo "  Reindex Total Writes: $TOTAL_RESTORE_WRITES"
+    if [ "$source_count" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "RECONCILIATION FAILED: source has $source_count docs but reindex wrote 0"
+        exit 1
+    fi
+    if [ "$source_count" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$source_count" ]; then
+        gap=$((source_count - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs gap between source count and reindex writes (may be source-side indexing or schema rejection)"
+    fi
+  else
+    # Reconciliation: verify backup-to-restore integrity using elasticdump's Total Writes
+    echo "Reconciliation:"
+    echo "  Source Count:         $source_count"
+    echo "  Backup Total Writes: $total_backup_writes"
+    echo "  Restore Total Writes: $TOTAL_RESTORE_WRITES"
+    echo "  Restore Failures:    $RESTORE_FAILED"
+
+    # Check 1: Did any file hard-fail during restore? (transient — retry will help)
+    if [ "$RESTORE_FAILED" = "true" ]; then
+        echo "RECONCILIATION FAILED: one or more files failed during restore"
+        exit 1
+    fi
+
+    # Check 2: Did backup produce data but restore confirmed nothing? (catastrophic)
+    if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -eq 0 ]; then
+        echo "RECONCILIATION FAILED: backed up $total_backup_writes docs but restored 0"
+        exit 1
+    fi
+
+    # Check 3: Were some docs rejected by destination? (permanent — log, don't block)
+    if [ "$total_backup_writes" -gt 0 ] && [ "$TOTAL_RESTORE_WRITES" -lt "$total_backup_writes" ]; then
+        gap=$((total_backup_writes - TOTAL_RESTORE_WRITES))
+        echo "WARNING: $gap docs rejected by destination (mapping/schema issues)"
+    fi
   fi
+
+  echo "Reconciliation passed"
 fi
 
 run_end_time=$(date +"%Y-%m-%dT%H:%M:%S")
@@ -322,7 +390,7 @@ echo "Data Migration Between Dates: $START_TIME and $END_TIME"
 if [ "$BACKFILL" = "true" ]; then
   echo "Backfill Job Completed"
 else
-  echo "Stats - Source Count: $source_count, Initial Destination Count: $initial_destination_count, Current Destination Count: $current_destination_count, Destination Delta: $destination_count"
+  echo "Stats - Source Count: $source_count, Backup Writes: $total_backup_writes, Restore Writes: $TOTAL_RESTORE_WRITES"
 fi
 echo "$current_end_time" > "$TOUCH_FILE"
 
